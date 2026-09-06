@@ -1,0 +1,61 @@
+import { connect } from 'node:http2';
+import { createPrivateKey, sign } from 'node:crypto';
+import { readFileSync } from 'node:fs';
+
+export function activityPayload(state, end = false, now = Math.floor(Date.now() / 1000)) {
+  const aps = { timestamp: now, event: end ? 'end' : 'update', 'content-state': state };
+  if (end) aps['dismissal-date'] = now + 1800;
+  else aps['stale-date'] = state.checkedAt + 120;
+  return { aps };
+}
+export class APNs {
+  constructor(env = process.env) {
+    this.env = env;
+    this.ready = Boolean(env.APNS_TEAM_ID && env.APNS_KEY_ID && env.APNS_PRIVATE_KEY_PATH && env.APNS_BUNDLE_ID);
+    if (this.ready) {
+      if (!['development', 'production'].includes(env.APNS_ENVIRONMENT)) throw new Error('Set APNS_ENVIRONMENT to development or production');
+      this.key = createPrivateKey(readFileSync(env.APNS_PRIVATE_KEY_PATH));
+    }
+  }
+  jwt() {
+    const now = Math.floor(Date.now() / 1000);
+    if (this.cachedJWT && now - this.issuedAt < 3000) return this.cachedJWT;
+    const encode = value => Buffer.from(JSON.stringify(value)).toString('base64url');
+    const unsigned = `${encode({ alg: 'ES256', kid: this.env.APNS_KEY_ID })}.${encode({ iss: this.env.APNS_TEAM_ID, iat: now })}`;
+    this.cachedJWT = `${unsigned}.${sign('sha256', Buffer.from(unsigned), { key: this.key, dsaEncoding: 'ieee-p1363' }).toString('base64url')}`;
+    this.issuedAt = now;
+    return this.cachedJWT;
+  }
+  async send(subscription, state, end = false) {
+    if (!this.ready) throw new Error('APNs is not configured');
+    const host = this.env.APNS_ENVIRONMENT === 'production' ? 'api.push.apple.com' : 'api.sandbox.push.apple.com';
+    const body = JSON.stringify(activityPayload(state, end));
+    return new Promise((resolve, reject) => {
+      const client = connect(`https://${host}`);
+      let settled = false;
+      const finish = (error, result) => {
+        if (settled) return; settled = true;
+        clearTimeout(timer); client.destroy();
+        error ? reject(error) : resolve(result);
+      };
+      const timer = setTimeout(() => finish(new Error('APNs timed out')), 12000);
+      client.on('error', error => finish(error));
+      const request = client.request({ ':method': 'POST', ':path': `/3/device/${subscription.token}`,
+        authorization: `bearer ${this.jwt()}`, 'apns-topic': `${this.env.APNS_BUNDLE_ID}.push-type.liveactivity`,
+        'apns-push-type': 'liveactivity', 'apns-priority': end ? '10' : '5',
+        'apns-expiration': String(Math.floor(Date.now() / 1000) + (end ? 3600 : 120)),
+        'apns-collapse-id': subscription.id, 'content-type': 'application/json' });
+      let status, response = '';
+      request.on('response', headers => { status = headers[':status']; });
+      request.setEncoding('utf8'); request.on('data', data => { response += data; });
+      request.on('error', error => finish(error));
+      request.on('end', () => {
+        let reason = ''; try { reason = JSON.parse(response).reason || ''; } catch {}
+        if (status === 200) finish(null, { ok: true });
+        else if (status === 410 || ['BadDeviceToken', 'Unregistered'].includes(reason)) finish(null, { expired: true });
+        else finish(new Error(`APNs ${status}: ${reason || 'request rejected'}`));
+      });
+      request.end(body);
+    });
+  }
+}

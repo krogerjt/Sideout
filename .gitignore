@@ -1,0 +1,11 @@
+.DS_Store
+.env
+server/data/
+*.p8
+*.xcuserstate
+xcuserdata/
+DerivedData/
+ios/Sideout.xcodeproj/
+ios/Config/Local.xcconfig
+node_modules/
+

@@ -1,0 +1,72 @@
+name: Sideout
+options:
+  bundleIdPrefix: com.example
+  deploymentTarget:
+    iOS: '17.0'
+settings:
+  base:
+    SWIFT_VERSION: '5.0'
+    TARGETED_DEVICE_FAMILY: '1'
+    MARKETING_VERSION: '1.0.0'
+    CURRENT_PROJECT_VERSION: '1'
+    CODE_SIGN_STYLE: Automatic
+targets:
+  Sideout:
+    type: application
+    platform: iOS
+    sources:
+      - App
+      - Shared
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.example.sideout
+    info:
+      path: Config/App-Info.plist
+      properties:
+        CFBundleDisplayName: Sideout
+        UILaunchScreen: {}
+        NSSupportsLiveActivities: true
+        NSSupportsLiveActivitiesFrequentUpdates: true
+        NSAppTransportSecurity:
+          NSAllowsLocalNetworking: true
+        CFBundleURLTypes:
+          - CFBundleURLName: com.example.sideout
+            CFBundleURLSchemes: [sideout]
+    entitlements:
+      path: Config/Sideout.entitlements
+      properties:
+        aps-environment: development
+    dependencies:
+      - target: SideoutActivity
+        embed: true
+  SideoutActivity:
+    type: app-extension
+    platform: iOS
+    sources:
+      - Widget
+      - Shared
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.example.sideout.activity
+        APPLICATION_EXTENSION_API_ONLY: true
+        SKIP_INSTALL: true
+    info:
+      path: Config/Widget-Info.plist
+      properties:
+        CFBundleDisplayName: Sideout Live Score
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.widgetkit-extension
+  SideoutTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources: [Tests]
+    dependencies:
+      - target: Sideout
+schemes:
+  Sideout:
+    build:
+      targets:
+        Sideout: all
+        SideoutActivity: all
+    test:
+      targets: [SideoutTests]
