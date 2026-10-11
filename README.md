@@ -10,7 +10,7 @@ A native iPhone app for NCAA women's volleyball, with set scores, favorites, mat
 - Push token rotation, reconnect retries, subscription restoration on app launch, pending unsubscribe cleanup, and final-score dismissal after 30 minutes.
 - Offline server tests and an unsigned iOS build check configured for GitHub Actions.
 
-**Current validation:** The score source was successfully queried during development. Server tests run on Windows. The Swift app and widget require a Mac/Xcode to compile and a signed iPhone build to validate real APNs delivery. No Apple credentials or hosted server are included, and no deployment has been performed.
+**Current validation:** The score source was successfully queried during development. Server tests run on Windows. The app and widget have been built and run on a signed iPhone, and Live Activities received real APNs score updates on the Lock Screen. No Apple credentials or hosted server are included in this repository, and no public deployment has been performed.
 
 ## Run the score server
 
@@ -42,7 +42,7 @@ For an actual iPhone, run the server on a persistent host behind HTTPS. Set `HOS
 5. Select the **Sideout** scheme and your iPhone, then build and run. For an unsigned simulator build, use the command in `.github/workflows/check.yml`.
 6. Open Sideout Settings, enter your HTTPS server address and access key, and tap **Save & connect**. The simulator can use `http://localhost:8787`; an iPhone's localhost refers to the phone itself.
 
-XcodeGen writes the app and widget plists and entitlements into `ios/Config`. Customize `project.yml` so regeneration preserves your configuration. App Store release preparation still needs an app icon, distribution signing, privacy disclosures, and device QA.
+XcodeGen writes the app and widget plists and entitlements into `ios/Config`. Customize `project.yml` so regeneration preserves your configuration. App Store release preparation still needs an app icon, distribution signing, privacy disclosures, and the remaining device QA below.
 
 ## Enable lock-screen updates
 
@@ -72,9 +72,8 @@ The scoreboard's team scores are **sets won**, not points. The match detail endp
 
 `cd server && npm test` covers parsing, empty/malformed feeds, points versus sets, Eastern date rollover, HTTP auth and validation, APNs payload shape and JWT signature, token rotation, deduplication, final updates, outage retries, and subscription deletion races. `npm run check` checks server syntax. Tests use recorded/reduced fixtures and make no internet requests.
 
-On a Mac, use Xcode's Test action to run `SideoutTests`; CI builds these tests but does not claim to exercise real APNs. Before distributing, verify on a signed iPhone:
+On a Mac, use Xcode's Test action to run `SideoutTests`; CI builds these tests but does not claim to exercise real APNs. Live Activity delivery has been verified on a signed iPhone (start a live match, wait for registration, lock the phone, and observe an actual score change). Before distributing, also verify:
 
-- Start a live match, wait for registration, lock the phone, and observe an actual score change.
 - Check expanded, compact, and minimal Dynamic Island layouts and large accessibility text.
 - Disconnect the network and confirm the stale warning, then reconnect.
 - Relaunch the app and confirm the existing activity is restored without duplication.
