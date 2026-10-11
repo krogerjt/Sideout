@@ -20,10 +20,13 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.example.sideout
+        # The hosted Sideout server the app talks to. Set this to your deployed HTTPS address.
+        SIDEOUT_SERVER_URL: https://sideout-api.fly.dev
     info:
       path: Config/App-Info.plist
       properties:
         CFBundleDisplayName: Sideout
+        SideoutServerURL: $(SIDEOUT_SERVER_URL)
         UILaunchScreen: {}
         NSSupportsLiveActivities: true
         NSSupportsLiveActivitiesFrequentUpdates: true

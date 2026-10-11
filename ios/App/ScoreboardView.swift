@@ -25,25 +25,23 @@ struct ScoreboardView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 24) {
                     header
-                    if !store.configured { welcome }
-                    else {
-                        if !store.activities.isEmpty { following }
-                        controls
-                        if let error = store.error { message(error, icon: "wifi.exclamationmark") }
-                        if store.loading && store.matches.isEmpty { ProgressView("Checking the court…").frame(maxWidth: .infinity).padding(40) }
-                        else if visible.isEmpty {
-                            ContentUnavailableView(search.isEmpty ? "No matches here" : "No matching teams", systemImage: "volleyball",
-                                description: Text(filter == "Favorites" ? "Tap a star on a match to save a team." : "Try another date or filter. Schedules use Eastern Time."))
-                        } else {
-                            LazyVStack(spacing: 12) {
-                                ForEach(visible) { match in
-                                    MatchCard(match: match, open: { selectedMatch = match })
-                                }
+                    if !store.activities.isEmpty { following }
+                    controls
+                    if let error = store.error { message(error, icon: "wifi.exclamationmark") }
+                    if store.loading && store.matches.isEmpty { ProgressView("Checking the court…").frame(maxWidth: .infinity).padding(40) }
+                    else if visible.isEmpty {
+                        ContentUnavailableView(search.isEmpty ? "No matches here" : "No matching teams", systemImage: "volleyball",
+                            description: Text(filter == "Favorites" ? "Tap a star on a match to save a team." : "Try another date or filter. Schedules use Eastern Time."))
+                    } else {
+                        LazyVStack(spacing: 12) {
+                            ForEach(visible) { match in
+                                MatchCard(match: match, open: { selectedMatch = match })
                             }
                         }
-                        Text("NCAA women’s volleyball · Scores via ncaa-api\nUpdate timing and coverage vary by match.")
-                            .font(.caption).foregroundStyle(.secondary).frame(maxWidth: .infinity).multilineTextAlignment(.center).padding(.vertical, 10)
                     }
+                    if !store.matches.contains(where: \.isLive) { demo }
+                    Text("NCAA women’s volleyball · Scores via ncaa-api\nUpdate timing and coverage vary by match.")
+                        .font(.caption).foregroundStyle(.secondary).frame(maxWidth: .infinity).multilineTextAlignment(.center).padding(.vertical, 10)
                 }.padding(20)
             }
             .background(Palette.paper).foregroundStyle(Palette.ink)
@@ -61,8 +59,8 @@ struct ScoreboardView: View {
             .onChange(of: store.dateKey) { _, _ in store.clearForDateChange() }
             .onChange(of: store.division) { _, _ in store.clearForDateChange() }
             .onOpenURL { url in
-                guard url.scheme == "sideout", url.host == "match",
-                      !url.lastPathComponent.isEmpty, url.lastPathComponent.allSatisfy(\.isNumber) else { return }
+                guard url.scheme == "sideout", url.host == "match", !url.lastPathComponent.isEmpty,
+                      url.lastPathComponent == ScoreAPI.demoMatchID || url.lastPathComponent.allSatisfy(\.isNumber) else { return }
                 if let match = store.matches.first(where: { $0.id == url.lastPathComponent }) { selectedMatch = match }
                 else if let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems,
                         let date = items.first(where: { $0.name == "date" })?.value,
@@ -89,15 +87,15 @@ struct ScoreboardView: View {
             }.accessibilityLabel("Settings")
         }
     }
-    private var welcome: some View {
-        VStack(alignment: .leading, spacing: 20) {
-            Image(systemName: "iphone.gen3.radiowaves.left.and.right").font(.system(size: 48)).foregroundStyle(Palette.lime)
-            Text("Your match.\nYour lock screen.").font(.system(size: 32, weight: .semibold, design: .serif))
-            Text("Follow NCAA women’s volleyball with live set scores and a glanceable lock-screen scoreboard.").foregroundStyle(.white.opacity(0.8))
-            Button("Connect score server", systemImage: "arrow.right") { settings = true }
-                .buttonStyle(.borderedProminent).tint(Palette.lime).foregroundStyle(Palette.ink)
-            Text("Connect your Sideout server to get started.").font(.caption).foregroundStyle(.white.opacity(0.7))
-        }.padding(26).frame(maxWidth: .infinity, alignment: .leading).foregroundStyle(.white).background(Palette.green, in: RoundedRectangle(cornerRadius: 26))
+    private var demo: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Image(systemName: "iphone.gen3.radiowaves.left.and.right").font(.system(size: 36)).foregroundStyle(Palette.lime)
+            Text("No match on right now?").font(.system(size: 24, weight: .semibold, design: .serif))
+            Text("Try a simulated match and put its live scoreboard on your Lock Screen.").foregroundStyle(.white.opacity(0.8))
+            Button("Try a demo match", systemImage: "arrow.right") {
+                Task { if let match = await store.demoMatch() { selectedMatch = match } }
+            }.buttonStyle(.borderedProminent).tint(Palette.lime).foregroundStyle(Palette.ink)
+        }.padding(22).frame(maxWidth: .infinity, alignment: .leading).foregroundStyle(.white).background(Palette.green, in: RoundedRectangle(cornerRadius: 22))
     }
     private var following: some View {
         VStack(alignment: .leading, spacing: 12) {

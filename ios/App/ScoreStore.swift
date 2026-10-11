@@ -9,9 +9,7 @@ final class ScoreStore: ObservableObject {
     @Published var division = "d1"
     @Published var error: String?
     @Published var loading = false
-    @Published var configured = false
     @Published var pushEnabled = false
-    @Published var serverAddress = UserDefaults.standard.string(forKey: "serverAddress") ?? ""
     @Published var favorites = Set(UserDefaults.standard.stringArray(forKey: "favorites") ?? [])
     @Published var activities: [Activity<VolleyballActivityAttributes>] = []
     @Published var activityMessages: [String: String] = [:]
@@ -22,7 +20,7 @@ final class ScoreStore: ObservableObject {
     private var pendingDeletes: Set<String> = Set(UserDefaults.standard.stringArray(forKey: "pendingDeletes") ?? [])
     private var generation = 0
 
-    var api: ScoreAPI? { try? ScoreAPI(address: serverAddress, key: Keychain.read()) }
+    var api: ScoreAPI? { ScoreAPI.bundled }
     var dateKey: String {
         let formatter = DateFormatter()
         formatter.calendar = Calendar(identifier: .gregorian)
@@ -31,24 +29,16 @@ final class ScoreStore: ObservableObject {
         formatter.dateFormat = "yyyy-MM-dd"
         return formatter.string(from: selectedDate)
     }
-    var queryKey: String { "\(dateKey)/\(division)/\(serverAddress)" }
+    var queryKey: String { "\(dateKey)/\(division)" }
     init() {
-        configured = api != nil
+        // Earlier builds connected to a self-hosted server with a shared key; that setup is gone.
+        Keychain.delete("sideout-server-access-key")
+        UserDefaults.standard.removeObject(forKey: "serverAddress")
         activities = Activity<VolleyballActivityAttributes>.activities.filter { $0.activityState == .active || $0.activityState == .stale }
         for activity in activities { observe(activity) }
     }
-    func saveSettings(address: String, key: String) async throws {
-        guard activities.isEmpty && pendingDeletes.isEmpty else { throw APIError(message: "Stop followed matches and reconnect to finish removing them before changing servers.") }
-        let candidate = try ScoreAPI(address: address, key: key)
-        let config = try await candidate.configuration()
-        try Keychain.save(key)
-        serverAddress = address.trimmingCharacters(in: .whitespacesAndNewlines)
-        UserDefaults.standard.set(serverAddress, forKey: "serverAddress")
-        configured = true; pushEnabled = config.pushEnabled
-        await refresh()
-    }
     func refresh() async {
-        guard let api else { configured = false; return }
+        guard let api else { error = "Sideout's server address is not configured in this build."; return }
         generation += 1
         let requestGeneration = generation
         let requestKey = queryKey
@@ -67,6 +57,12 @@ final class ScoreStore: ObservableObject {
         }
     }
     func clearForDateChange() { matches = []; error = nil }
+    /// Loads the simulated match the server always has live, for trying Sideout when no real match is on.
+    func demoMatch() async -> Match? {
+        guard let api else { return nil }
+        do { return try await api.match(id: ScoreAPI.demoMatchID, date: dateKey, division: "d1") }
+        catch { self.error = error.localizedDescription; return nil }
+    }
     func toggleFavorite(_ team: VolleyballTeam) {
         guard !team.slug.isEmpty else { return }
         if favorites.contains(team.slug) { favorites.remove(team.slug) } else { favorites.insert(team.slug) }
@@ -81,7 +77,7 @@ final class ScoreStore: ObservableObject {
         startingMatch = match.id
         defer { startingMatch = nil }
         do {
-            guard try await api.configuration().pushEnabled else { throw APIError(message: "Your server needs Apple Push Notification credentials before lock-screen following is available.") }
+            guard try await api.configuration().pushEnabled else { throw APIError(message: "Lock-screen updates are temporarily unavailable. Please try again later.") }
             let current = try await api.match(match)
             guard current.isLive else { throw APIError(message: "This match is no longer in progress.") }
             let attributes = VolleyballActivityAttributes(subscriptionID: UUID().uuidString, matchID: current.id,

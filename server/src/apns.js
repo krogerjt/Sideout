@@ -11,12 +11,24 @@ export function activityPayload(state, end = false, now = Math.floor(Date.now() 
 export class APNs {
   constructor(env = process.env) {
     this.env = env;
-    this.ready = Boolean(env.APNS_TEAM_ID && env.APNS_KEY_ID && env.APNS_PRIVATE_KEY_PATH && env.APNS_BUNDLE_ID);
+    this.ready = Boolean(env.APNS_TEAM_ID && env.APNS_KEY_ID && (env.APNS_PRIVATE_KEY || env.APNS_PRIVATE_KEY_PATH) && env.APNS_BUNDLE_ID);
     if (this.ready) {
       if (!['development', 'production'].includes(env.APNS_ENVIRONMENT)) throw new Error('Set APNS_ENVIRONMENT to development or production');
-      this.key = createPrivateKey(readFileSync(env.APNS_PRIVATE_KEY_PATH));
+      // Hosts that only take secrets as environment variables can pass the .p8 contents directly.
+      this.key = createPrivateKey(env.APNS_PRIVATE_KEY ? env.APNS_PRIVATE_KEY.replaceAll('\\n', '\n') : readFileSync(env.APNS_PRIVATE_KEY_PATH));
     }
   }
+  // One HTTP/2 connection is reused for every push, as Apple recommends; it reopens after errors or GOAWAY.
+  connection() {
+    if (this.client && !this.client.closed && !this.client.destroyed) return this.client;
+    const host = this.env.APNS_ENVIRONMENT === 'production' ? 'api.push.apple.com' : 'api.sandbox.push.apple.com';
+    const client = connect(`https://${host}`);
+    const drop = () => { if (this.client === client) this.client = null; };
+    client.on('error', drop); client.on('goaway', drop); client.on('close', drop);
+    client.setTimeout(10 * 60 * 1000, () => client.close());
+    return this.client = client;
+  }
+  close() { this.client?.close(); this.client = null; }
   jwt() {
     const now = Math.floor(Date.now() / 1000);
     if (this.cachedJWT && now - this.issuedAt < 3000) return this.cachedJWT;
@@ -28,18 +40,19 @@ export class APNs {
   }
   async send(subscription, state, end = false) {
     if (!this.ready) throw new Error('APNs is not configured');
-    const host = this.env.APNS_ENVIRONMENT === 'production' ? 'api.push.apple.com' : 'api.sandbox.push.apple.com';
     const body = JSON.stringify(activityPayload(state, end));
     return new Promise((resolve, reject) => {
-      const client = connect(`https://${host}`);
+      const client = this.connection();
       let settled = false;
       const finish = (error, result) => {
         if (settled) return; settled = true;
-        clearTimeout(timer); client.destroy();
+        clearTimeout(timer); client.off('error', onClientError);
+        if (error && !request.closed) request.close();
         error ? reject(error) : resolve(result);
       };
-      const timer = setTimeout(() => finish(new Error('APNs timed out')), 12000);
-      client.on('error', error => finish(error));
+      const onClientError = error => finish(error);
+      const timer = setTimeout(() => { finish(new Error('APNs timed out')); client.destroy(); }, 12000);
+      client.on('error', onClientError);
       const request = client.request({ ':method': 'POST', ':path': `/3/device/${subscription.token}`,
         authorization: `bearer ${this.jwt()}`, 'apns-topic': `${this.env.APNS_BUNDLE_ID}.push-type.liveactivity`,
         'apns-push-type': 'liveactivity', 'apns-priority': end ? '10' : '5',

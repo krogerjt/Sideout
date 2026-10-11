@@ -1,0 +1,39 @@
+# Fly.io deployment for the Sideout server. Run `fly launch --no-deploy --copy-config` from this folder,
+# then follow "Host the server" in the README. Change `app` to the name Fly assigns you.
+app = 'sideout-api'
+primary_region = 'iad'
+
+[build]
+  dockerfile = 'Dockerfile'
+
+[env]
+  HOST = '0.0.0.0'
+  PORT = '8787'
+  DATA_PATH = '/app/data/sideout.sqlite'
+  POLL_SECONDS = '20'
+  APNS_ENVIRONMENT = 'production'
+  # Fly's edge sets this to the real client address; rate limits key on it.
+  CLIENT_IP_HEADER = 'fly-client-ip'
+
+[[mounts]]
+  source = 'sideout_data'
+  destination = '/app/data'
+
+# The push worker runs inside the web process, so exactly one machine must stay up.
+[http_service]
+  internal_port = 8787
+  force_https = true
+  auto_stop_machines = 'off'
+  auto_start_machines = true
+  min_machines_running = 1
+
+  [[http_service.checks]]
+    grace_period = '10s'
+    interval = '30s'
+    method = 'GET'
+    path = '/health'
+    timeout = '5s'
+
+[[vm]]
+  size = 'shared-cpu-1x'
+  memory = '256mb'

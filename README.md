@@ -7,46 +7,67 @@ A native iPhone app for NCAA women's volleyball, with set scores, favorites, mat
 - SwiftUI app targeting iOS 17 or newer, with search, date and division filters, favorite teams, pull to refresh, and foreground refresh every 20 seconds.
 - WidgetKit / ActivityKit extension showing sets won and current-set points, with a stale indicator after two minutes without a successful feed check.
 - Node.js server that reads NCAA scoreboards and match details, stores activity subscriptions in SQLite, and updates or ends activities using Apple's HTTP/2 APNs service.
+- Public score API with per-install credentials, rate limits, a simulated demo match, a hosted privacy policy, and Fly.io deployment config.
 - Push token rotation, reconnect retries, subscription restoration on app launch, pending unsubscribe cleanup, and final-score dismissal after 30 minutes.
 - Offline server tests and an unsigned iOS build check configured for GitHub Actions.
 
 **Current validation:** The score source was successfully queried during development. Server tests run on Windows. The app and widget have been built and run on a signed iPhone, and Live Activities received real APNs score updates on the Lock Screen. No Apple credentials or hosted server are included in this repository, and no public deployment has been performed.
 
-## Run the score server
+## Run the score server locally
 
 Install Node.js 24 or newer. No npm dependencies are required.
 
 ```sh
 cd server
 cp .env.example .env
-node -e "console.log(require('node:crypto').randomBytes(32).toString('hex'))"
-```
-
-On PowerShell, use `Copy-Item .env.example .env` in place of `cp`. Copy the generated random value into `ACCESS_KEY` in `.env`, then run:
-
-```sh
 npm test
 npm start
 ```
 
-The default address is `http://localhost:8787`. `/health` is public; all `/v1` routes require `Authorization: Bearer YOUR_ACCESS_KEY`. An unconfigured APNs server still serves scores, but the app will explain that lock-screen following needs push credentials.
+On PowerShell, use `Copy-Item .env.example .env` in place of `cp`. The default address is `http://localhost:8787`.
 
-For an actual iPhone, run the server on a persistent host behind HTTPS. Set `HOST=0.0.0.0` if the reverse proxy runs outside the host network. Mount `server/data` on persistent storage. The Dockerfile supports this setup; configure secrets through environment variables and mount the `.p8` key read-only. This is a single-instance personal server; don't scale multiple polling instances against the same subscriptions.
+The API has no shared password. Scores (`/v1/config`, `/v1/matches`, `/v1/matches/:id`), `/health` and the privacy policy at `/privacy` are public. The first time an iPhone follows a match, the app calls `POST /v1/devices` to get a random install ID and secret, keeps them in the Keychain, and sends them as `Authorization: Bearer <id>.<secret>` when starting or stopping its own Live Activities. The server stores only a hash of the secret, and one install can't see, change or stop another install's activities. Each install can follow up to 10 matches at once, and `MAX_ACTIVITIES` caps the whole server.
+
+Every client is rate limited by IP: `RATE_LIMIT_PER_MINUTE` (default 120) for API calls and `DEVICE_LIMIT_PER_HOUR` (default 20) for new installs. Behind a proxy, set `CLIENT_IP_HEADER` to the header carrying the real client address, or every user will share one limit.
+
+The server polls each followed match once per cycle and pushes the result to every iPhone following it, over a single reused HTTP/2 connection to Apple. It runs as one instance; don't scale multiple polling instances against the same database.
+
+### Demo match
+
+`/v1/matches/demo` is a simulated live match computed from the clock: about 18 minutes of rallies, a short final, then a new match. The app offers **Try a demo match** whenever no real match is live, and it can be followed on the Lock Screen like a real one. This gives App Review, and anyone trying the app out of season, something to follow. Mention it in the App Review notes.
+
+## Host the server
+
+The repository includes a Fly.io configuration (`server/fly.toml`). Any host that runs the Dockerfile with HTTPS, one always-on instance and a persistent volume works too.
+
+1. Install `flyctl` and sign in. From `server/`, run `fly launch --no-deploy --copy-config` and accept or rename the app. If the name changes, update `app` in `fly.toml`.
+2. Create the database volume: `fly volumes create sideout_data --size 1`.
+3. Add the push credentials as secrets. `fly secrets set` takes the key contents directly, so there's no file to mount:
+   ```sh
+   fly secrets set APNS_TEAM_ID=... APNS_KEY_ID=... APNS_BUNDLE_ID=com.yourname.sideout \
+     APNS_PRIVATE_KEY="$(cat AuthKey_XXXX.p8)" PRIVACY_CONTACT=you@example.com
+   ```
+   `fly.toml` already sets `APNS_ENVIRONMENT=production`, which TestFlight and App Store builds need. For an Xcode debug build on your phone, use a separate server set to `development`.
+4. Run `fly deploy`, then check `https://<your-app>.fly.dev/health` and `/privacy`.
+5. Put that HTTPS address in `SIDEOUT_SERVER_URL` in `ios/project.yml` and regenerate the Xcode project.
+
+The machine is configured never to stop, because the push worker runs inside the web process. Back up the volume if you want followed matches to survive a lost machine; nothing else on it is precious.
 
 ## Build the iPhone app on a Mac
 
 1. Install Xcode (with an iOS 17+ SDK) and XcodeGen: `brew install xcodegen`.
-2. Run `cd ios && xcodegen generate`, then open `Sideout.xcodeproj`.
-3. Set unique bundle identifiers in `ios/project.yml`: `com.yourname.sideout` for the app and `com.yourname.sideout.activity` for the extension. Regenerate the project after edits.
+2. Set unique bundle identifiers in `ios/project.yml`: `com.yourname.sideout` for the app and `com.yourname.sideout.activity` for the extension. Set `SIDEOUT_SERVER_URL` to your hosted server.
+3. Run `cd ios && xcodegen generate`, then open `Sideout.xcodeproj`.
 4. In Xcode, select your Apple development team for both targets. Use an Apple Developer Program account with Push Notifications enabled for the app's identifier. The project includes the push entitlement and Live Activities plist settings.
-5. Select the **Sideout** scheme and your iPhone, then build and run. For an unsigned simulator build, use the command in `.github/workflows/check.yml`.
-6. Open Sideout Settings, enter your HTTPS server address and access key, and tap **Save & connect**. The simulator can use `http://localhost:8787`; an iPhone's localhost refers to the phone itself.
+5. Select the **Sideout** scheme and your iPhone, then build and run. For an unsigned simulator build, use the command in `.github/workflows/check.yml`. To point the simulator at a local server, override `SIDEOUT_SERVER_URL` with `http://localhost:8787`; an iPhone's localhost refers to the phone itself.
 
-XcodeGen writes the app and widget plists and entitlements into `ios/Config`. Customize `project.yml` so regeneration preserves your configuration. App Store release preparation still needs an app icon, distribution signing, privacy disclosures, and the remaining device QA below.
+The app has no setup screen: it talks to the server compiled into it. Settings shows Live Activity status, a link to iPhone settings and the privacy policy.
+
+XcodeGen writes the app and widget plists and entitlements into `ios/Config`. Customize `project.yml` so regeneration preserves your configuration. App Store release preparation still needs an app icon, distribution signing, a privacy manifest and App Privacy answers, and the remaining device QA below.
 
 ## Enable lock-screen updates
 
-Create an APNs signing key in your Apple Developer account and configure these **server-side only**:
+Create an APNs signing key in your Apple Developer account and configure these **server-side only** (on Fly.io, use the secrets in "Host the server" instead):
 
 ```dotenv
 APNS_TEAM_ID=YOUR_APPLE_TEAM_ID
@@ -70,7 +91,7 @@ The scoreboard's team scores are **sets won**, not points. The match detail endp
 
 ## Tests and device checklist
 
-`cd server && npm test` covers parsing, empty/malformed feeds, points versus sets, Eastern date rollover, HTTP auth and validation, APNs payload shape and JWT signature, token rotation, deduplication, final updates, outage retries, and subscription deletion races. `npm run check` checks server syntax. Tests use recorded/reduced fixtures and make no internet requests.
+`cd server && npm test` covers parsing, empty/malformed feeds, points versus sets, Eastern date rollover, per-install auth and ownership, rate limits and caps, request validation, the demo match, APNs payload shape and JWT signature, token rotation, deduplication, final updates, outage retries, and subscription deletion races. `npm run check` checks server syntax. Tests use recorded/reduced fixtures and make no internet requests.
 
 On a Mac, use Xcode's Test action to run `SideoutTests`; CI builds these tests but does not claim to exercise real APNs. Live Activity delivery has been verified on a signed iPhone (start a live match, wait for registration, lock the phone, and observe an actual score change). Before distributing, also verify:
 
@@ -82,6 +103,8 @@ On a Mac, use Xcode's Test action to run `SideoutTests`; CI builds these tests b
 
 ## Security and hosting scope
 
-This implementation is for a personal installation. The server uses one shared access key; anyone with it can manage subscriptions. Use HTTPS and keep the key private. Tokens live in the server's SQLite volume; protect that volume and backups. Do not log requests with authorization headers or activity tokens. For a public multi-user launch, add per-user authentication and authorization, gateway rate limiting, capacity controls, and production feed/hosting arrangements.
+The server is built for one public instance. Scores are public data; following is scoped to per-install credentials, and requests are rate limited per IP. Use HTTPS only. Push tokens and install IDs live in the server's SQLite volume; protect that volume and backups. Do not log requests with authorization headers or activity tokens. If abuse becomes a problem, Apple's App Attest can prove requests come from the real app before `/v1/devices` issues a credential.
+
+The privacy policy served at `/privacy` describes exactly what the server stores. Update `server/src/privacy.js` whenever that changes, and keep the App Store's App Privacy answers in step with it.
 
 Apple references: [Live Activities](https://developer.apple.com/documentation/activitykit/displaying-live-data-with-live-activities) and [ActivityKit push notifications](https://developer.apple.com/documentation/activitykit/starting-and-updating-live-activities-with-activitykit-push-notifications).

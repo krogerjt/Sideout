@@ -6,6 +6,6 @@
   "scripts": {
     "start": "node --env-file-if-exists=.env src/server.js",
     "test": "node --test test/*.test.js",
-    "check": "node --check src/server.js && node --check src/provider.js && node --check src/apns.js && node --check src/worker.js"
+    "check": "node --check src/server.js && node --check src/provider.js && node --check src/apns.js && node --check src/worker.js && node --check src/store.js && node --check src/demo.js && node --check src/privacy.js"
   }
 }
