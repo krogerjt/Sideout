@@ -12,10 +12,13 @@ final class ScoreModelTests: XCTestCase {
         XCTAssertEqual(state.awayPoints.scoreText, "–")
     }
     func testAPIRejectsInsecureRemoteURLAndCredentialsInURL() {
-        XCTAssertThrowsError(try ScoreAPI(address: "http://example.com", key: "test"))
-        XCTAssertThrowsError(try ScoreAPI(address: "https://user:password@example.com", key: "test"))
-        XCTAssertNoThrow(try ScoreAPI(address: "http://localhost:8787", key: "test"))
-        XCTAssertNoThrow(try ScoreAPI(address: "https://example.com", key: "test"))
+        XCTAssertThrowsError(try ScoreAPI(address: "http://example.com"))
+        XCTAssertThrowsError(try ScoreAPI(address: "https://user:password@example.com"))
+        XCTAssertNoThrow(try ScoreAPI(address: "http://localhost:8787"))
+        XCTAssertNoThrow(try ScoreAPI(address: "https://example.com"))
+    }
+    func testPrivacyPolicyIsServedByTheHostedServer() throws {
+        XCTAssertEqual(try ScoreAPI(address: "https://example.com").privacyPolicyURL.absoluteString, "https://example.com/privacy")
     }
     func testDeepLinkPreservesMatchDateAndDivision() {
         let attributes = VolleyballActivityAttributes(subscriptionID: "test", matchID: "6625873", date: "2026-09-05",
