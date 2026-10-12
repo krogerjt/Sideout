@@ -18,6 +18,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: brew install xcodegen
-      - run: cd ios && xcodegen generate
+      - run: xcodegen generate
       - name: Build app, extension, and tests without signing
-        run: xcodebuild build-for-testing -project ios/Sideout.xcodeproj -scheme Sideout -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=NO
+        run: xcodebuild build-for-testing -project Sideout.xcodeproj -scheme Sideout -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=NO

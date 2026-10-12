@@ -60,14 +60,26 @@ The machine is configured never to stop, because the push worker runs inside the
    ```
    SIDEOUT_SERVER_URL = https:/$()/your-server.example
    ```
-   Write `https:/$()/` instead of `https://`, because `//` starts a comment in xcconfig files. Without this file the app uses a placeholder address and can't load scores. The bundle identifiers (`com.krogerjt.sideout` and `com.krogerjt.sideout.activity`) and team are already set in `ios/project.yml`; change them there if you fork the project.
-3. Run `cd ios && xcodegen generate`, then open `Sideout.xcodeproj`.
+   Write `https:/$()/` instead of `https://`, because `//` starts a comment in xcconfig files. Without this file the app uses a placeholder address and can't load scores. The bundle identifiers (`com.krogerjt.sideout` and `com.krogerjt.sideout.activity`) and team are already set in `project.yml`; change them there if you fork the project.
+3. Run `xcodegen generate` in the repository root, then open `Sideout.xcodeproj`.
 4. In Xcode, select your Apple development team for both targets. Use an Apple Developer Program account with Push Notifications enabled for the app's identifier. The project includes the push entitlement and Live Activities plist settings.
 5. Select the **Sideout** scheme and your iPhone, then build and run. For an unsigned simulator build, use the command in `.github/workflows/check.yml`. To point the simulator at a local server, set `SIDEOUT_SERVER_URL = http:/$()/localhost:8787` in `ios/Local.xcconfig`; an iPhone's localhost refers to the phone itself.
 
 The app has no setup screen: it talks to the server compiled into it. Settings shows Live Activity status, a link to iPhone settings and the privacy policy.
 
-XcodeGen writes the app and widget plists and entitlements into `ios/Config`. Customize `project.yml` so regeneration preserves your configuration. App Store release preparation still needs an app icon, distribution signing, a privacy manifest and App Privacy answers, and the remaining device QA below.
+XcodeGen writes the app and widget plists and entitlements into `ios/Config`. Customize `project.yml` so regeneration preserves your configuration. The app icon source is `ios/App/Assets.xcassets/AppIcon.appiconset/AppIcon.png` (1024×1024, no transparency); replace it to change the icon.
+
+## Release to TestFlight from Windows
+
+Builds run on a Mac over SSH with [agent-team](https://github.com/krogerjt/agent-team)'s iOS release tools (Hollis). It finds the XcodeGen spec at the repository root, uploads only tracked and non-ignored files, and generates the project on the Mac. Because `ios/Local.xcconfig` is git-ignored, it never reaches the Mac; give the build the server address instead:
+
+1. Store the server's `https://` address as a secret in the Agent Team Build Keychain (**Options → Mac Build Host → secrets**), and map the environment variable `SIDEOUT_SERVER_URL` to it.
+2. Set this repository's preparation command to `sh ios/write-local-xcconfig.sh`. It writes `ios/Local.xcconfig` on the Mac before each build.
+3. Follow agent-team's README for the rest: the App Store Connect app record for `com.krogerjt.sideout`, an App Store Connect API key, `npm run ios -- settings --repo <path> --team L67J56VPBG ...`, and the signing and upload grants. Then run `preflight`, `archive`, `export` and `upload`, or ask Hollis.
+
+After Apple processes the upload, add people under **TestFlight → Internal Testing**. Internal testers must first be users in **Users and Access**.
+
+The app declares that it uses no non-exempt encryption, so uploads skip the export-compliance question, and it ships a privacy manifest for its UserDefaults use. A public App Store release would still need App Privacy answers in App Store Connect and the remaining device QA below.
 
 ## Enable lock-screen updates
 

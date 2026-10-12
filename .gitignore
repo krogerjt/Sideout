@@ -5,7 +5,8 @@ server/data/
 *.xcuserstate
 xcuserdata/
 DerivedData/
-ios/Sideout.xcodeproj/
+Sideout.xcodeproj/
+ios/Config/
 ios/Local.xcconfig
 node_modules/
 
