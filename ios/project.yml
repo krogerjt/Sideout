@@ -1,6 +1,6 @@
 name: Sideout
 options:
-  bundleIdPrefix: com.example
+  bundleIdPrefix: com.krogerjt
   deploymentTarget:
     iOS: '17.0'
 settings:
@@ -10,6 +10,7 @@ settings:
     MARKETING_VERSION: '1.0.0'
     CURRENT_PROJECT_VERSION: '1'
     CODE_SIGN_STYLE: Automatic
+    DEVELOPMENT_TEAM: L67J56VPBG
 targets:
   Sideout:
     type: application
@@ -19,9 +20,11 @@ targets:
       - Shared
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.example.sideout
-        # The hosted Sideout server the app talks to. Set this to your deployed HTTPS address.
-        SIDEOUT_SERVER_URL: https://sideout-api.fly.dev
+        PRODUCT_BUNDLE_IDENTIFIER: com.krogerjt.sideout
+    # SIDEOUT_SERVER_URL comes from Sideout.xcconfig, which reads the private, git-ignored Local.xcconfig.
+    configFiles:
+      Debug: Sideout.xcconfig
+      Release: Sideout.xcconfig
     info:
       path: Config/App-Info.plist
       properties:
@@ -33,7 +36,7 @@ targets:
         NSAppTransportSecurity:
           NSAllowsLocalNetworking: true
         CFBundleURLTypes:
-          - CFBundleURLName: com.example.sideout
+          - CFBundleURLName: com.krogerjt.sideout
             CFBundleURLSchemes: [sideout]
     entitlements:
       path: Config/Sideout.entitlements
@@ -50,7 +53,7 @@ targets:
       - Shared
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.example.sideout.activity
+        PRODUCT_BUNDLE_IDENTIFIER: com.krogerjt.sideout.activity
         APPLICATION_EXTENSION_API_ONLY: true
         SKIP_INSTALL: true
     info:
