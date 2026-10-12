@@ -67,7 +67,19 @@ The machine is configured never to stop, because the push worker runs inside the
 
 The app has no setup screen: it talks to the server compiled into it. Settings shows Live Activity status, a link to iPhone settings and the privacy policy.
 
-XcodeGen writes the app and widget plists and entitlements into `ios/Config`. Customize `project.yml` so regeneration preserves your configuration. App Store release preparation still needs an app icon, distribution signing, a privacy manifest and App Privacy answers, and the remaining device QA below.
+XcodeGen writes the app and widget plists and entitlements into `ios/Config`. Customize `project.yml` so regeneration preserves your configuration. The app icon source is `ios/App/Assets.xcassets/AppIcon.appiconset/AppIcon.png` (1024×1024, no transparency); replace it to change the icon.
+
+## Upload to TestFlight without a Mac
+
+The **Upload to TestFlight** workflow archives, signs and uploads a build on a GitHub-hosted Mac, so you can ship from any computer.
+
+1. In App Store Connect, create the app (**Apps → + → New App**, bundle ID `com.krogerjt.sideout`).
+2. Create an API key under **Users and Access → Integrations → App Store Connect API** with the **Admin** role, so the workflow can create distribution certificates and profiles. Download the `.p8` (you only get one chance) and note the key ID and issuer ID. This is a different key from the APNs key the server uses.
+3. Add repository secrets (**Settings → Secrets and variables → Actions**): `ASC_KEY_ID`, `ASC_ISSUER_ID`, `ASC_KEY_P8` (the whole `.p8` file's contents), and `SIDEOUT_SERVER_URL` (a normal `https://` address).
+4. Run it from the **Actions** tab, or `gh workflow run testflight.yml`. Each run uses its run number as the build number.
+5. After Apple finishes processing (it emails you), add people under **TestFlight → Internal Testing**. Internal testers must first be added as users in **Users and Access**; up to 100 people, no Beta App Review.
+
+The app declares that it uses no non-exempt encryption, so builds skip the export-compliance question. A public App Store release would still need App Privacy answers in App Store Connect and the remaining device QA below.
 
 ## Enable lock-screen updates
 
