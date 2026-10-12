@@ -16,18 +16,18 @@ targets:
     type: application
     platform: iOS
     sources:
-      - App
-      - Shared
+      - ios/App
+      - ios/Shared
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.krogerjt.sideout
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
-    # SIDEOUT_SERVER_URL comes from Sideout.xcconfig, which reads the private, git-ignored Local.xcconfig.
+    # SIDEOUT_SERVER_URL comes from ios/Sideout.xcconfig, which reads the private, git-ignored ios/Local.xcconfig.
     configFiles:
-      Debug: Sideout.xcconfig
-      Release: Sideout.xcconfig
+      Debug: ios/Sideout.xcconfig
+      Release: ios/Sideout.xcconfig
     info:
-      path: Config/App-Info.plist
+      path: ios/Config/App-Info.plist
       properties:
         CFBundleDisplayName: Sideout
         ITSAppUsesNonExemptEncryption: false
@@ -41,7 +41,7 @@ targets:
           - CFBundleURLName: com.krogerjt.sideout
             CFBundleURLSchemes: [sideout]
     entitlements:
-      path: Config/Sideout.entitlements
+      path: ios/Config/Sideout.entitlements
       properties:
         aps-environment: development
     dependencies:
@@ -51,15 +51,15 @@ targets:
     type: app-extension
     platform: iOS
     sources:
-      - Widget
-      - Shared
+      - ios/Widget
+      - ios/Shared
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.krogerjt.sideout.activity
         APPLICATION_EXTENSION_API_ONLY: true
         SKIP_INSTALL: true
     info:
-      path: Config/Widget-Info.plist
+      path: ios/Config/Widget-Info.plist
       properties:
         CFBundleDisplayName: Sideout Live Score
         NSExtension:
@@ -67,7 +67,7 @@ targets:
   SideoutTests:
     type: bundle.unit-test
     platform: iOS
-    sources: [Tests]
+    sources: [ios/Tests]
     dependencies:
       - target: Sideout
 schemes:
