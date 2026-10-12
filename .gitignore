@@ -6,6 +6,6 @@ server/data/
 xcuserdata/
 DerivedData/
 ios/Sideout.xcodeproj/
-ios/Config/Local.xcconfig
+ios/Local.xcconfig
 node_modules/
 

@@ -44,22 +44,26 @@ The repository includes a Fly.io configuration (`server/fly.toml`). Any host tha
 2. Create the database volume: `fly volumes create sideout_data --size 1`.
 3. Add the push credentials as secrets. `fly secrets set` takes the key contents directly, so there's no file to mount:
    ```sh
-   fly secrets set APNS_TEAM_ID=... APNS_KEY_ID=... APNS_BUNDLE_ID=com.yourname.sideout \
+   fly secrets set APNS_TEAM_ID=... APNS_KEY_ID=... APNS_BUNDLE_ID=com.krogerjt.sideout \
      APNS_PRIVATE_KEY="$(cat AuthKey_XXXX.p8)" PRIVACY_CONTACT=you@example.com
    ```
    `fly.toml` already sets `APNS_ENVIRONMENT=production`, which TestFlight and App Store builds need. For an Xcode debug build on your phone, use a separate server set to `development`.
 4. Run `fly deploy`, then check `https://<your-app>.fly.dev/health` and `/privacy`.
-5. Put that HTTPS address in `SIDEOUT_SERVER_URL` in `ios/project.yml` and regenerate the Xcode project.
+5. Put that HTTPS address in `ios/Local.xcconfig` (see "Build the iPhone app on a Mac") and regenerate the Xcode project.
 
 The machine is configured never to stop, because the push worker runs inside the web process. Back up the volume if you want followed matches to survive a lost machine; nothing else on it is precious.
 
 ## Build the iPhone app on a Mac
 
 1. Install Xcode (with an iOS 17+ SDK) and XcodeGen: `brew install xcodegen`.
-2. Set unique bundle identifiers in `ios/project.yml`: `com.yourname.sideout` for the app and `com.yourname.sideout.activity` for the extension. Set `SIDEOUT_SERVER_URL` to your hosted server.
+2. Point the app at your server by creating `ios/Local.xcconfig`. It's git-ignored, so the address stays out of this public repository:
+   ```
+   SIDEOUT_SERVER_URL = https:/$()/your-server.example
+   ```
+   Write `https:/$()/` instead of `https://`, because `//` starts a comment in xcconfig files. Without this file the app uses a placeholder address and can't load scores. The bundle identifiers (`com.krogerjt.sideout` and `com.krogerjt.sideout.activity`) and team are already set in `ios/project.yml`; change them there if you fork the project.
 3. Run `cd ios && xcodegen generate`, then open `Sideout.xcodeproj`.
 4. In Xcode, select your Apple development team for both targets. Use an Apple Developer Program account with Push Notifications enabled for the app's identifier. The project includes the push entitlement and Live Activities plist settings.
-5. Select the **Sideout** scheme and your iPhone, then build and run. For an unsigned simulator build, use the command in `.github/workflows/check.yml`. To point the simulator at a local server, override `SIDEOUT_SERVER_URL` with `http://localhost:8787`; an iPhone's localhost refers to the phone itself.
+5. Select the **Sideout** scheme and your iPhone, then build and run. For an unsigned simulator build, use the command in `.github/workflows/check.yml`. To point the simulator at a local server, set `SIDEOUT_SERVER_URL = http:/$()/localhost:8787` in `ios/Local.xcconfig`; an iPhone's localhost refers to the phone itself.
 
 The app has no setup screen: it talks to the server compiled into it. Settings shows Live Activity status, a link to iPhone settings and the privacy policy.
 
@@ -73,7 +77,7 @@ Create an APNs signing key in your Apple Developer account and configure these *
 APNS_TEAM_ID=YOUR_APPLE_TEAM_ID
 APNS_KEY_ID=YOUR_APNS_KEY_ID
 APNS_PRIVATE_KEY_PATH=/absolute/path/AuthKey_YOURKEY.p8
-APNS_BUNDLE_ID=com.yourname.sideout
+APNS_BUNDLE_ID=com.krogerjt.sideout
 APNS_ENVIRONMENT=development
 ```
 

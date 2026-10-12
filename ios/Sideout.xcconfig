@@ -1,0 +1,6 @@
+// The Sideout server the app talks to. "//" starts a comment in xcconfig files, so URLs are written with "/$()/".
+// Put your real address in ios/Local.xcconfig (git-ignored), for example:
+//   SIDEOUT_SERVER_URL = https:/$()/your-mac.your-tailnet.ts.net
+SIDEOUT_SERVER_URL = https:/$()/sideout-server.invalid
+
+#include? "Local.xcconfig"
