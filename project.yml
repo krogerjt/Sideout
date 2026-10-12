@@ -22,6 +22,7 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.krogerjt.sideout
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        TARGETED_DEVICE_FAMILY: '1'
     # SIDEOUT_SERVER_URL comes from ios/Sideout.xcconfig, which reads the private, git-ignored ios/Local.xcconfig.
     configFiles:
       Debug: ios/Sideout.xcconfig
@@ -30,6 +31,8 @@ targets:
       path: ios/Config/App-Info.plist
       properties:
         CFBundleDisplayName: Sideout
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         ITSAppUsesNonExemptEncryption: false
         SideoutServerURL: $(SIDEOUT_SERVER_URL)
         UILaunchScreen: {}
@@ -58,10 +61,13 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.krogerjt.sideout.activity
         APPLICATION_EXTENSION_API_ONLY: true
         SKIP_INSTALL: true
+        TARGETED_DEVICE_FAMILY: '1'
     info:
       path: ios/Config/Widget-Info.plist
       properties:
         CFBundleDisplayName: Sideout Live Score
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         NSExtension:
           NSExtensionPointIdentifier: com.apple.widgetkit-extension
   SideoutTests:
