@@ -8,11 +8,12 @@ export function privacyPage(contact) {
 <h1>Sideout Privacy Policy</h1>
 <p>Sideout shows college volleyball scores and lets you follow a match on your Lock Screen. It has no accounts, ads, analytics or tracking.</p>
 <h2>What stays on your iPhone</h2>
-<p>Your favorite teams and app settings are stored only on your device.</p>
+<p>Your favorite teams and app settings are stored on your device. If you turn on automatic Lock Screen scoreboards, the app also shares your favorite teams with the Sideout server, as described below.</p>
 <h2>What the Sideout server stores</h2>
 <ul>
 <li><strong>A random install ID and secret.</strong> The app creates these the first time it needs lock-screen updates, so only your iPhone can start or stop its own followed matches. They are not linked to your name, Apple ID, or any other identifier. An install ID unused for 180 days is deleted.</li>
 <li><strong>Live Activity push tokens and the match you follow.</strong> Apple issues the token for one Lock Screen scoreboard. Sideout uses it only to send that match's score updates through Apple Push Notification service. It is deleted when the match ends, when you stop following, or after eight hours at most.</li>
+<li><strong>Favorite teams for automatic scoreboards.</strong> If automatic Lock Screen scoreboards are on, the server keeps your favorite teams' identifiers and a push-to-start token Apple issues for Sideout, so it can start a scoreboard 30 minutes before those teams play. It also remembers which matches it started for you for three days, so a dismissed scoreboard is not started again. Turning the setting off or removing all favorites deletes the teams and token.</li>
 <li><strong>Network addresses.</strong> Your IP address is held in memory for up to an hour to limit abusive request rates. It is not written to disk or logged with your install ID.</li>
 </ul>
 <h2>Sharing</h2>

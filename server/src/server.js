@@ -5,12 +5,12 @@ import { NCAAProvider, validDate, easternDate } from './provider.js';
 import { DEMO_ID, withDemo } from './demo.js';
 import { APNs } from './apns.js';
 import { Store } from './store.js';
-import { pollSubscriptions } from './worker.js';
+import { pollSubscriptions, startFavorites, DEVICE_ACTIVITY_LIMIT } from './worker.js';
 import { privacyPage } from './privacy.js';
 
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const hash = value => createHash('sha256').update(value).digest('hex');
-const DEVICE_ACTIVITY_LIMIT = 10;
+const MAX_FAVORITES = 50;
 
 // Fixed-window counters per client and bucket. Single instance, so memory is the source of truth.
 export class RateLimiter {
@@ -74,6 +74,18 @@ export function createApp({ provider, store, apns, limiter = new RateLimiter(def
         store.addDevice(id, hash(secret));
         return send(201, { deviceId: id, secret });
       }
+      if (url.pathname === '/v1/autostart' && ['PUT', 'DELETE'].includes(req.method)) {
+        const deviceId = authenticate(req, store);
+        if (!deviceId) return send(401, { error: 'This iPhone needs to reconnect to Sideout.' });
+        if (req.method === 'DELETE') { store.removeAutostart(deviceId); return send(200, { ok: true }); }
+        let data; try { data = await body(req); } catch { return send(400, { error: 'Invalid JSON request.' }); }
+        const teams = data?.teams;
+        if (!/^[a-f0-9]{32,512}$/i.test(data?.token || '') || !Array.isArray(teams) || teams.length > MAX_FAVORITES ||
+          !teams.every(t => /^[a-z0-9-]{1,100}$/.test(t?.slug || '') && ['d1','d2','d3'].includes(t?.division))) return send(400, { error: 'Invalid favorite teams registration.' });
+        if (!teams.length) store.removeAutostart(deviceId);
+        else store.setAutostart(deviceId, data.token.toLowerCase(), teams.map(({ slug, division }) => ({ slug, division })));
+        return send(200, { ok: true });
+      }
       const id = url.pathname.split('/').pop();
       if (url.pathname.startsWith('/v1/activities/') && uuid.test(id) && ['PUT', 'DELETE'].includes(req.method)) {
         const deviceId = authenticate(req, store);
@@ -119,8 +131,10 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   const app = createApp({ provider, store, apns, limiter });
   let stopped = false, timer;
   async function tick() {
+    await startFavorites({ store, provider, apns });
     await pollSubscriptions({ store, provider, apns });
     store.pruneDevices(Date.now() - 180 * 86400000);
+    store.pruneLaunches(Date.now() - 3 * 86400000);
     limiter.prune();
     if (!stopped) timer = setTimeout(tick, Math.max(15, Number(process.env.POLL_SECONDS) || 20) * 1000);
   }
