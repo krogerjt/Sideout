@@ -112,11 +112,13 @@ test('upstream failures return actionable error and no fake scores', async t => 
   const response = await f.request('/v1/matches');
   assert.equal(response.status, 502); assert.match((await response.json()).error, /temporarily unavailable/);
 });
-test('teams and standings are public', async t => {
+test('teams and standings are public, with counted standings when NCAA.com has none', async t => {
   const store = new Store(':memory:');
-  const standings = { division: 'd1', updated: '', conferences: [] };
-  const provider = { board: async () => [], match: async () => { throw new Error('none'); }, standings: async () => standings };
-  const teamIndex = { teams: () => [{ slug: 'a', name: 'A', abbreviation: 'A', division: 'd1' }, { slug: 'b', name: 'B', abbreviation: 'B', division: 'd2' }], complete: () => true };
+  let official = { division: 'd1', updated: 'Oct 1', conferences: [{ name: 'Big Ten', teams: [] }] };
+  const counted = { division: 'd1', source: 'scores', updated: '', conferences: [] };
+  const provider = { board: async () => [], match: async () => { throw new Error('none'); }, standings: async () => { if (!official) throw new Error('Score provider returned 500'); return official; } };
+  const teamIndex = { teams: () => [{ slug: 'a', name: 'A', abbreviation: 'A', division: 'd1' }, { slug: 'b', name: 'B', abbreviation: 'B', division: 'd2' }],
+    complete: () => true, standings: () => counted };
   const app = createApp({ store, provider: withDemo(provider), apns: { ready: true }, teamIndex });
   await new Promise(resolve => app.listen(0, '127.0.0.1', resolve));
   t.after(async () => { await new Promise(resolve => app.close(resolve)); store.close(); });
@@ -124,5 +126,10 @@ test('teams and standings are public', async t => {
   assert.deepEqual((await (await get('/v1/teams?division=d2')).json()).teams.map(t => t.slug), ['b']);
   assert.equal((await (await get('/v1/teams')).json()).teams.length, 2);
   assert.equal((await get('/v1/teams?division=d9')).status, 400);
-  assert.deepEqual(await (await get('/v1/standings?division=d1')).json(), standings);
+  assert.equal((await (await get('/v1/standings?division=d1')).json()).source, 'ncaa');
+  official = { ...official, conferences: [] };
+  assert.deepEqual(await (await get('/v1/standings?division=d1')).json(), counted);
+  official = null;
+  const response = await get('/v1/standings?division=d1');
+  assert.equal(response.status, 200); assert.deepEqual(await response.json(), counted);
 });

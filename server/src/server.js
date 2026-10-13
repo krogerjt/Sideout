@@ -69,8 +69,11 @@ export function createApp({ provider, store, apns, teamIndex = new TeamIndex({ p
       if (url.pathname === '/v1/standings' && req.method === 'GET') {
         const division = url.searchParams.get('division') || 'd1';
         if (!['d1','d2','d3'].includes(division)) return send(400, { error: 'Use division d1, d2, or d3.' });
-        try { return send(200, await provider.standings(division), 'public, max-age=900'); }
-        catch { return send(502, { error: 'Standings are temporarily unavailable. Please retry.' }); }
+        // NCAA.com's standings page is can be empty (it was for volleyball in October 2026), so fall back to records counted from final scores.
+        let official = null;
+        try { official = await provider.standings(division); } catch {}
+        if (official?.conferences.length) return send(200, { ...official, source: 'ncaa' }, 'public, max-age=900');
+        return send(200, teamIndex.standings(division), 'public, max-age=600');
       }
       if ((url.pathname === '/v1/matches' || /^\/v1\/matches\/(\d+|demo)$/.test(url.pathname)) && req.method === 'GET') {
         const date = url.searchParams.get('date') || easternDate();

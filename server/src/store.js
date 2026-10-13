@@ -15,6 +15,8 @@ export class Store {
     CREATE TABLE IF NOT EXISTS team_days (date TEXT NOT NULL, division TEXT NOT NULL, teams TEXT NOT NULL, fetchedAt INTEGER NOT NULL, PRIMARY KEY (date, division));
     CREATE TABLE IF NOT EXISTS launches (deviceId TEXT NOT NULL, matchId TEXT NOT NULL, at INTEGER NOT NULL, PRIMARY KEY (deviceId, matchId))`);
     // Databases created before per-device ownership gain the column; their rows have no owner and expire within eight hours.
+    // Boards indexed before results were kept have no games; they are read again so standings can count them.
+    if (!this.db.prepare('PRAGMA table_info(team_days)').all().some(c => c.name === 'games')) this.db.exec('ALTER TABLE team_days ADD COLUMN games TEXT');
     if (!this.db.prepare('PRAGMA table_info(subscriptions)').all().some(c => c.name === 'deviceId')) this.db.exec('ALTER TABLE subscriptions ADD COLUMN deviceId TEXT');
   }
   all() { return this.db.prepare('SELECT * FROM subscriptions').all(); }
@@ -63,11 +65,14 @@ export class Store {
   launch(deviceId, matchId, now = Date.now()) { this.db.prepare('INSERT OR REPLACE INTO launches (deviceId,matchId,at) VALUES (?,?,?)').run(deviceId, matchId, now); }
   pruneLaunches(olderThan) { this.db.prepare('DELETE FROM launches WHERE at < ?').run(olderThan); }
   // Teams seen on each scoreboard, which together make the searchable team list.
-  setTeamDay(date, division, teams, now = Date.now()) {
-    this.db.prepare(`INSERT INTO team_days (date,division,teams,fetchedAt) VALUES (?,?,?,?)
-      ON CONFLICT(date,division) DO UPDATE SET teams=excluded.teams, fetchedAt=excluded.fetchedAt`).run(date, division, JSON.stringify(teams), now);
+  setTeamDay(date, division, teams, now = Date.now(), games = []) {
+    this.db.prepare(`INSERT INTO team_days (date,division,teams,fetchedAt,games) VALUES (?,?,?,?,?)
+      ON CONFLICT(date,division) DO UPDATE SET teams=excluded.teams, fetchedAt=excluded.fetchedAt, games=excluded.games`).run(date, division, JSON.stringify(teams), now, JSON.stringify(games));
   }
-  teamDays() { return new Map(this.db.prepare('SELECT date,division,fetchedAt FROM team_days').all().map(r => [`${r.date}/${r.division}`, r.fetchedAt])); }
-  teamDayRows() { return this.db.prepare('SELECT division,teams FROM team_days').all().map(r => ({ division: r.division, teams: JSON.parse(r.teams) })); }
+  teamDays() { return new Map(this.db.prepare('SELECT date,division,fetchedAt FROM team_days WHERE games IS NOT NULL').all().map(r => [`${r.date}/${r.division}`, r.fetchedAt])); }
+  teamDayRows() {
+    return this.db.prepare('SELECT date,division,teams,games FROM team_days WHERE games IS NOT NULL').all()
+      .map(r => ({ date: r.date, division: r.division, teams: JSON.parse(r.teams), games: JSON.parse(r.games) }));
+  }
   close() { this.db.close(); }
 }

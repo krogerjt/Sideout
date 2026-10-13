@@ -34,6 +34,8 @@ struct Standings: Decodable {
     }
     let division: String
     let updated: String
+    /// "ncaa" for NCAA.com's own table, "scores" when the server counted records from final scores.
+    let source: String?
     let conferences: [Conference]
 }
 private struct ErrorEnvelope: Decodable { let error: String }

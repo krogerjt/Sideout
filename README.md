@@ -101,7 +101,7 @@ On iPhone, enable Live Activities for Sideout in Settings. Open a match in progr
 
 The **Teams** tab lists every team on this season's scoreboards, searchable by division, with a star to save each one. The server builds the list itself: it reads each day's scoreboard for the season (mid-August to late December) once per division, one board every 1.5 seconds behind live score requests, stores the teams it sees in SQLite, and re-reads the next two weeks daily since schedules change. The first pass takes about fifteen minutes after a fresh start; `/v1/teams` reports `complete: false` until then. Teams are keyed by the same NCAA slug the auto-start check matches on, and each is filed under the division whose scoreboard lists it most.
 
-The **Standings** tab shows ncaa-api's `/standings/volleyball-women/:division` (NCAA.com's standings page), filterable by conference, cached for 30 minutes.
+The **Standings** tab shows ncaa-api's `/standings/volleyball-women/:division` (NCAA.com's standings page), filterable by conference, cached for 30 minutes. NCAA.com's volleyball standings page can be empty (it was in October 2026), so when it has no tables the server counts records itself from the final scores the team index stores: overall wins and losses, plus conference records from matches between two teams in the same conference, grouped by each team's conference on the scoreboard. The app says which source it is showing.
 
 ### Favorite teams start automatically
 
