@@ -16,7 +16,7 @@ function setup(t) {
   const provider = { match: async () => { calls++; return match; } };
   const pushes = [];
   const apns = { ready: true, send: async (...args) => { pushes.push(args); return { ok: true }; } };
-  return { store, sub, match, provider, pushes, apns, calls: () => calls, now: 100000, onError: () => {} };
+  return { store, sub, match, provider, pushes, apns, calls: () => calls, now: 100000, onError: () => {}, onLog: () => {} };
 }
 test('sends changes, suppresses duplicate updates, sends freshness heartbeat', async t => {
   const f = setup(t);
@@ -25,6 +25,13 @@ test('sends changes, suppresses duplicate updates, sends freshness heartbeat', a
   await pollSubscriptions({ ...f, now: 161000 }); assert.equal(f.pushes.length, 2);
   f.match.home.setsWon = 3;
   await pollSubscriptions({ ...f, now: 162000 }); assert.equal(f.pushes.length, 3);
+});
+test('score changes are urgent pushes, unchanged heartbeats are not', async t => {
+  const f = setup(t);
+  await pollSubscriptions(f); assert.equal(f.pushes[0][3], true);
+  await pollSubscriptions({ ...f, now: 161000 }); assert.equal(f.pushes[1][3], false);
+  f.match.home.setsWon = 3;
+  await pollSubscriptions({ ...f, now: 162000 }); assert.equal(f.pushes[2][3], true);
 });
 test('final ends activity and removes subscription after successful push', async t => {
   const f = setup(t); f.match.status = 'final';

@@ -158,6 +158,8 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   }
   app.listen(Number(process.env.PORT) || 8787, process.env.HOST || '127.0.0.1', () => {
     console.log(`Sideout listening on port ${Number(process.env.PORT) || 8787}. Background pushes: ${apns.ready ? 'enabled' : 'not configured'}.`);
+    if (apns.ready) apns.verifyCredentials().then(({ ok, error }) => ok ? console.log('APNs accepted the signing key.')
+      : console.error(`APNs check failed: ${error}. Lock-screen updates will not arrive. InvalidProviderToken means APNS_KEY_ID, APNS_TEAM_ID and the .p8 file don't belong together, or the key isn't enabled for APNs in ${process.env.APNS_ENVIRONMENT}.`));
     tick();
   });
   for (const signal of ['SIGTERM', 'SIGINT']) process.on(signal, () => {

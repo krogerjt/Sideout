@@ -4,7 +4,7 @@ import { contentState, easternDate } from './provider.js';
 export const AUTOSTART_LEAD_MS = 30 * 60 * 1000;
 export const DEVICE_ACTIVITY_LIMIT = 10;
 
-export async function pollSubscriptions({ store, provider, apns, now = Date.now(), onError = console.error }) {
+export async function pollSubscriptions({ store, provider, apns, now = Date.now(), onError = console.error, onLog = console.log }) {
   const matches = new Map();
   for (const sub of store.all()) {
     if (sub.expiresAt <= now) { store.remove(sub.id); continue; }
@@ -20,8 +20,11 @@ export async function pollSubscriptions({ store, provider, apns, now = Date.now(
       // Heartbeat advances stale-date only after a successful provider fetch.
       if (!end && sub.lastState === fingerprint && now - sub.lastSent < 60000) continue;
       if (store.get(sub.id)?.token !== sub.token) continue;
-      const result = await apns.send(sub, state, end);
+      // Score changes go out at high priority: iOS may hold low-priority pushes for minutes, long enough for the activity to go stale.
+      const result = await apns.send(sub, state, end, sub.lastState !== fingerprint);
       if (store.get(sub.id)?.token !== sub.token) continue;
+      if (result.expired) onLog(`Stopped updating activity ${sub.id.slice(0, 8)} (match ${sub.matchId}): APNs rejected its token (${result.reason || 'expired'}).`);
+      else if (!sub.lastSent) onLog(`First update delivered to APNs for activity ${sub.id.slice(0, 8)} (match ${sub.matchId}).`);
       if (result.expired || end) store.remove(sub.id);
       else store.sent(sub.id, fingerprint, now, sub.token);
     } catch (error) { onError(`Score update failed: ${error.message}`); }
