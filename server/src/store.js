@@ -12,6 +12,7 @@ export class Store {
     ); CREATE TABLE IF NOT EXISTS tombstones (id TEXT PRIMARY KEY, expiresAt INTEGER NOT NULL);
     CREATE TABLE IF NOT EXISTS devices (id TEXT PRIMARY KEY, secretHash TEXT NOT NULL, lastSeen INTEGER NOT NULL);
     CREATE TABLE IF NOT EXISTS autostarts (deviceId TEXT PRIMARY KEY, token TEXT NOT NULL, teams TEXT NOT NULL, updatedAt INTEGER NOT NULL);
+    CREATE TABLE IF NOT EXISTS team_days (date TEXT NOT NULL, division TEXT NOT NULL, teams TEXT NOT NULL, fetchedAt INTEGER NOT NULL, PRIMARY KEY (date, division));
     CREATE TABLE IF NOT EXISTS launches (deviceId TEXT NOT NULL, matchId TEXT NOT NULL, at INTEGER NOT NULL, PRIMARY KEY (deviceId, matchId))`);
     // Databases created before per-device ownership gain the column; their rows have no owner and expire within eight hours.
     if (!this.db.prepare('PRAGMA table_info(subscriptions)').all().some(c => c.name === 'deviceId')) this.db.exec('ALTER TABLE subscriptions ADD COLUMN deviceId TEXT');
@@ -61,5 +62,12 @@ export class Store {
   launched(deviceId, matchId) { return Boolean(this.db.prepare('SELECT 1 FROM launches WHERE deviceId=? AND matchId=?').get(deviceId, matchId)); }
   launch(deviceId, matchId, now = Date.now()) { this.db.prepare('INSERT OR REPLACE INTO launches (deviceId,matchId,at) VALUES (?,?,?)').run(deviceId, matchId, now); }
   pruneLaunches(olderThan) { this.db.prepare('DELETE FROM launches WHERE at < ?').run(olderThan); }
+  // Teams seen on each scoreboard, which together make the searchable team list.
+  setTeamDay(date, division, teams, now = Date.now()) {
+    this.db.prepare(`INSERT INTO team_days (date,division,teams,fetchedAt) VALUES (?,?,?,?)
+      ON CONFLICT(date,division) DO UPDATE SET teams=excluded.teams, fetchedAt=excluded.fetchedAt`).run(date, division, JSON.stringify(teams), now);
+  }
+  teamDays() { return new Map(this.db.prepare('SELECT date,division,fetchedAt FROM team_days').all().map(r => [`${r.date}/${r.division}`, r.fetchedAt])); }
+  teamDayRows() { return this.db.prepare('SELECT division,teams FROM team_days').all().map(r => ({ division: r.division, teams: JSON.parse(r.teams) })); }
   close() { this.db.close(); }
 }

@@ -13,10 +13,18 @@ struct MatchDetailView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 24) {
                     Text(match.statusText.uppercased()).font(.caption.bold()).tracking(1.5).foregroundStyle(Palette.green)
-                    Text("\(match.away.name)\n\(match.home.name)").font(.system(size: 32, weight: .bold, design: .serif))
-                    HStack(alignment: .firstTextBaseline) {
-                        Text("\(match.away.setsWon.scoreText) – \(match.home.setsWon.scoreText)").font(.system(size: 64, weight: .medium, design: .rounded)).monospacedDigit()
-                        Text("SETS").font(.caption.bold()).foregroundStyle(.secondary)
+                    VStack(spacing: 0) {
+                        HStack {
+                            Spacer()
+                            Text("SETS").font(.system(size: 9, weight: .semibold)).tracking(1).foregroundStyle(.secondary)
+                        }.padding(.horizontal, 18).padding(.top, 14)
+                        teamRow(match.away)
+                        Divider().padding(.leading, 70)
+                        teamRow(match.home)
+                    }.background(.white, in: RoundedRectangle(cornerRadius: 20))
+                    if !match.away.slug.isEmpty && !match.home.slug.isEmpty && !store.isFavorite(match) {
+                        Label("Star a team to put its matches on your Lock Screen automatically.", systemImage: "star")
+                            .font(.footnote).foregroundStyle(.secondary)
                     }
                     if let error { Label(error, systemImage: "wifi.exclamationmark").font(.callout).foregroundStyle(.orange) }
                     if !match.sets.isEmpty { setTable }
@@ -52,6 +60,19 @@ struct MatchDetailView: View {
                     }
                 }
         }
+    }
+    private func teamRow(_ team: VolleyballTeam) -> some View {
+        HStack(spacing: 6) {
+            TeamBadge(abbreviation: team.abbreviation, size: 44)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(team.name).font(.system(size: 21, weight: .semibold, design: .serif)).lineLimit(2).minimumScaleFactor(0.8)
+                if let rank = team.rank, rank > 0 { Text("No. \(rank)").font(.caption).foregroundStyle(.secondary) }
+            }.padding(.leading, 6)
+            // The demo match's made-up teams have no slug, so they can't be saved.
+            if !team.slug.isEmpty { FavoriteStar(team: FavoriteTeam(slug: team.slug, name: team.name, division: match.division)) }
+            Spacer(minLength: 4)
+            Text(team.setsWon.scoreText).font(.system(size: 40, weight: .semibold, design: .rounded)).monospacedDigit()
+        }.padding(.horizontal, 18).padding(.vertical, 12)
     }
     private var setTable: some View {
         Grid(alignment: .leading, horizontalSpacing: 16, verticalSpacing: 15) {

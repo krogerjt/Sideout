@@ -26,7 +26,7 @@ npm start
 
 On PowerShell, use `Copy-Item .env.example .env` in place of `cp`. The default address is `http://localhost:8787`.
 
-The API has no shared password. Scores (`/v1/config`, `/v1/matches`, `/v1/matches/:id`), `/health` and the privacy policy at `/privacy` are public. The first time an iPhone follows a match, the app calls `POST /v1/devices` to get a random install ID and secret, keeps them in the Keychain, and sends them as `Authorization: Bearer <id>.<secret>` when starting or stopping its own Live Activities. The server stores only a hash of the secret, and one install can't see, change or stop another install's activities. Each install can follow up to 10 matches at once, and `MAX_ACTIVITIES` caps the whole server.
+The API has no shared password. Scores (`/v1/config`, `/v1/matches`, `/v1/matches/:id`), the team list (`/v1/teams`), standings (`/v1/standings`), `/health` and the privacy policy at `/privacy` are public. The first time an iPhone follows a match, the app calls `POST /v1/devices` to get a random install ID and secret, keeps them in the Keychain, and sends them as `Authorization: Bearer <id>.<secret>` when starting or stopping its own Live Activities. The server stores only a hash of the secret, and one install can't see, change or stop another install's activities. Each install can follow up to 10 matches at once, and `MAX_ACTIVITIES` caps the whole server.
 
 Every client is rate limited by IP: `RATE_LIMIT_PER_MINUTE` (default 120) for API calls and `DEVICE_LIMIT_PER_HOUR` (default 20) for new installs. Behind a proxy, set `CLIENT_IP_HEADER` to the header carrying the real client address, or every user will share one limit.
 
@@ -34,7 +34,7 @@ The server polls each followed match once per cycle and pushes the result to eve
 
 ### Demo match
 
-`/v1/matches/demo` is a simulated live match computed from the clock: about 18 minutes of rallies, a short final, then a new match. The app offers **Try a demo match** whenever no real match is live, and it can be followed on the Lock Screen like a real one. This gives App Review, and anyone trying the app out of season, something to follow. Mention it in the App Review notes.
+`/v1/matches/demo` is a simulated live match computed from the clock: about 18 minutes of rallies, a short final, then a new match. The app hides it behind developer settings: tap the version in Settings seven times, open **Developer settings**, and turn on **Show demo match**. It can be followed on the Lock Screen like a real one. This gives App Review, and anyone trying the app out of season, something to follow. Mention it in the App Review notes.
 
 ## Host the server
 
@@ -97,9 +97,15 @@ Use `production` for TestFlight/App Store builds. Match the APNs environment to 
 
 On iPhone, enable Live Activities for Sideout in Settings. Open a match in progress, tap **Follow on Lock Screen**, and keep the app open until it says **Following on your lock screen**. Lock the phone. The server then polls the feed and sends ActivityKit pushes, so updates don't depend on the app continuing to run. To stop, use **Stop following** in the app or dismiss the Live Activity.
 
+### Teams and standings
+
+The **Teams** tab lists every team on this season's scoreboards, searchable by division, with a star to save each one. The server builds the list itself: it reads each day's scoreboard for the season (mid-August to late December) once per division, one board every 1.5 seconds behind live score requests, stores the teams it sees in SQLite, and re-reads the next two weeks daily since schedules change. The first pass takes about fifteen minutes after a fresh start; `/v1/teams` reports `complete: false` until then. Teams are keyed by the same NCAA slug the auto-start check matches on, and each is filed under the division whose scoreboard lists it most.
+
+The **Standings** tab shows ncaa-api's `/standings/volleyball-women/:division` (NCAA.com's standings page), filterable by conference, cached for 30 minutes.
+
 ### Favorite teams start automatically
 
-Tap a star next to a team to save it as a favorite. Favorites are stored on the iPhone with Core Data (earlier builds' saved stars move over on first launch) and can be removed in Settings. On iOS 17.2 or later, with **Start automatically** on in Settings, the app sends the server its ActivityKit push-to-start token and the favorite teams' identifiers (`PUT /v1/autostart`; `DELETE` or an empty list removes them). Each poll, the server checks today's scoreboard (and yesterday's before 6 AM Eastern, for late West Coast matches) and sends a push-to-start 30 minutes before a favorite team's scheduled first serve, or as soon as a favorite match is found live. iOS creates the Live Activity even when Sideout is closed and launches the app in the background to register the activity's update token, after which updates work like a manually followed match. Each match is started at most once per install, so a dismissed scoreboard stays dismissed. iOS can't start Live Activities from a local timer while the app is closed, which is why the schedule check lives on the server.
+Star a team in the Teams tab, or next to its name inside a match, to save it as a favorite. Favorites are stored on the iPhone with Core Data (earlier builds' saved stars move over on first launch) and can be removed in Settings. On iOS 17.2 or later, with **Start automatically** on in Settings, the app sends the server its ActivityKit push-to-start token and the favorite teams' identifiers (`PUT /v1/autostart`; `DELETE` or an empty list removes them). Each poll, the server checks today's scoreboard (and yesterday's before 6 AM Eastern, for late West Coast matches) and sends a push-to-start 30 minutes before a favorite team's scheduled first serve, or as soon as a favorite match is found live. iOS creates the Live Activity even when Sideout is closed and launches the app in the background to register the activity's update token, after which updates work like a manually followed match. Each match is started at most once per install, so a dismissed scoreboard stays dismissed. iOS can't start Live Activities from a local timer while the app is closed, which is why the schedule check lives on the server.
 
 The worker defaults to a 20-second polling interval, sends score changes at priority 5, and refreshes unchanged activities about once per minute. Terminal updates use priority 10. It retries transient errors and removes invalid push tokens. The provider queue caps requests below the community endpoint's published rate limit; many simultaneous followed matches can increase refresh time. Subscriptions expire after eight hours, matching the Live Activity lifetime. Updates can't be guaranteed to be instantaneous or permanently visible: Apple controls delivery and activity lifetime, and the feed may lag the actual match.
 

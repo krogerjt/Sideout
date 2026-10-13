@@ -52,15 +52,40 @@ export function contentState(match) {
     homePoints: current?.home ?? null, awayPoints: current?.away ?? null,
     status: match.status, statusText: match.statusText, checkedAt: match.checkedAt };
 }
+// Standings columns arrive keyed by the merged NCAA table headers, e.g. "Conference W" or "Overall PCT".
+function record(row, group) {
+  const value = suffix => Object.entries(row).find(([key]) => new RegExp(`^${group}\\b.*\\b${suffix}$`, 'i').test(key.trim()))?.[1];
+  const wins = value('W'), losses = value('L');
+  return /^\d+$/.test(wins || '') && /^\d+$/.test(losses || '') ? `${wins}-${losses}` : null;
+}
+export function normalizeStandings(raw, division) {
+  if (!Array.isArray(raw?.data)) throw new Error('Unexpected NCAA standings format');
+  return {
+    division, updated: typeof raw.updated === 'string' ? raw.updated : '',
+    conferences: raw.data.filter(c => typeof c?.conference === 'string' && Array.isArray(c.standings)).map(c => ({
+      name: c.conference.trim(),
+      teams: c.standings.map(row => {
+        const keys = Object.keys(row);
+        const schoolKey = keys.find(key => /school|team|name/i.test(key)) ?? keys[0];
+        return {
+          school: String(row[schoolKey] ?? '').trim(),
+          conference: record(row, 'conf(erence)?'),
+          overall: record(row, 'overall'),
+          stats: keys.filter(key => key !== schoolKey).map(key => ({ label: key.trim(), value: String(row[key] ?? '').trim() }))
+        };
+      }).filter(team => team.school)
+    })).filter(c => c.name && c.teams.length)
+  };
+}
 // Shared queue keeps this personal server below the public provider's 5 req/sec limit.
 export class NCAAProvider {
   constructor({ baseURL = process.env.NCAA_BASE_URL || 'https://ncaa-api.henrygd.me', fetcher = fetch } = {}) {
     this.baseURL = baseURL.replace(/\/$/, ''); this.fetcher = fetcher;
     this.cache = new Map(); this.pending = new Map(); this.queue = Promise.resolve();
   }
-  async get(path) {
+  async get(path, maxAge = path.startsWith('/standings/') ? 30 * 60000 : 15000) {
     const cached = this.cache.get(path);
-    if (cached && Date.now() - cached.at < 15000) return cached;
+    if (cached && Date.now() - cached.at < maxAge) return cached;
     if (this.pending.has(path)) return this.pending.get(path);
     const task = this.queue.then(async () => {
       const response = await this.fetcher(`${this.baseURL}${path}`, {
@@ -79,6 +104,10 @@ export class NCAAProvider {
   async board(date, division) {
     const { raw, at } = await this.get(`/scoreboard/volleyball-women/${division}/${date.replaceAll('-', '/')}`);
     return normalizeBoard(raw, date, division, at);
+  }
+  async standings(division) {
+    const { raw } = await this.get(`/standings/volleyball-women/${division}`);
+    return normalizeStandings(raw, division);
   }
   async match(date, division, id) {
     const board = await this.board(date, division);

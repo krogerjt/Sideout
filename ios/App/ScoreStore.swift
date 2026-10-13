@@ -15,6 +15,15 @@ final class ScoreStore: ObservableObject {
         didSet { UserDefaults.standard.set(autoStart, forKey: "autoStartFavorites"); syncAutoStart() }
     }
     @Published private(set) var autoStartStatus: String?
+    /// Unlocked by tapping the version in Settings; holds tools like the demo match that family members don't need.
+    @Published var developerMode = UserDefaults.standard.bool(forKey: "developerMode") {
+        didSet { UserDefaults.standard.set(developerMode, forKey: "developerMode"); if !developerMode { showDemo = false } }
+    }
+    @Published var showDemo = UserDefaults.standard.bool(forKey: "showDemoMatch") {
+        didSet { UserDefaults.standard.set(showDemo, forKey: "showDemoMatch") }
+    }
+    /// A sideout:// link waiting for the scoreboard to open it, set when a link arrives while another tab is showing.
+    @Published var openedURL: URL?
     @Published var activities: [Activity<VolleyballActivityAttributes>] = []
     @Published var activityMessages: [String: String] = [:]
     @Published var startingMatch: String?
@@ -104,9 +113,13 @@ final class ScoreStore: ObservableObject {
         catch { self.error = error.localizedDescription; return nil }
     }
     func toggleFavorite(_ team: VolleyballTeam, division: String) {
+        toggleFavorite(FavoriteTeam(slug: team.slug, name: team.name, division: division))
+    }
+    /// Saves by slug, the same key the server matches scoreboards on, whether the team came from a match or the team list.
+    func toggleFavorite(_ team: FavoriteTeam) {
         guard !team.slug.isEmpty else { return }
         if favorites.contains(team.slug) { favoriteStore.remove(team.slug) }
-        else { favoriteStore.save(FavoriteTeam(slug: team.slug, name: team.name, division: division)) }
+        else { favoriteStore.save(team) }
         favoriteTeams = favoriteStore.all()
         syncAutoStart()
     }

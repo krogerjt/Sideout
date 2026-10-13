@@ -31,7 +31,7 @@ struct ScoreboardView: View {
                     if store.loading && store.matches.isEmpty { ProgressView("Checking the court…").frame(maxWidth: .infinity).padding(40) }
                     else if visible.isEmpty {
                         ContentUnavailableView(search.isEmpty ? "No matches here" : "No matching teams", systemImage: "volleyball",
-                            description: Text(filter == "Favorites" ? "Tap a star on a match to save a team. Its matches will appear on your Lock Screen automatically." : "Try another date or filter. Schedules use Eastern Time."))
+                            description: Text(filter == "Favorites" ? "Star a team in the Teams tab, or next to its name inside a match. Its matches will appear on your Lock Screen automatically." : "Try another date or filter. Schedules use Eastern Time."))
                     } else {
                         LazyVStack(spacing: 12) {
                             ForEach(visible) { match in
@@ -39,7 +39,7 @@ struct ScoreboardView: View {
                             }
                         }
                     }
-                    if !store.matches.contains(where: \.isLive) { demo }
+                    if store.showDemo { demo }
                     Text("NCAA women’s volleyball · Scores via ncaa-api\nUpdate timing and coverage vary by match.")
                         .font(.caption).foregroundStyle(.secondary).frame(maxWidth: .infinity).multilineTextAlignment(.center).padding(.vertical, 10)
                 }.padding(20)
@@ -58,21 +58,25 @@ struct ScoreboardView: View {
             }
             .onChange(of: store.dateKey) { _, _ in store.clearForDateChange() }
             .onChange(of: store.division) { _, _ in store.clearForDateChange() }
-            .onOpenURL { url in
-                guard url.scheme == "sideout", url.host == "match", !url.lastPathComponent.isEmpty,
-                      url.lastPathComponent == ScoreAPI.demoMatchID || url.lastPathComponent.allSatisfy(\.isNumber) else { return }
-                if let match = store.matches.first(where: { $0.id == url.lastPathComponent }) { selectedMatch = match }
-                else if let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems,
-                        let date = items.first(where: { $0.name == "date" })?.value,
-                        let division = items.first(where: { $0.name == "division" })?.value, let api = store.api {
-                    Task {
-                        do { selectedMatch = try await api.match(id: url.lastPathComponent, date: date, division: division) }
-                        catch { store.error = error.localizedDescription }
-                    }
-                }
+            .onChange(of: store.openedURL, initial: true) { _, url in
+                guard let url else { return }
+                store.openedURL = nil
+                open(url)
             }
         }
-        .preferredColorScheme(.light)
+    }
+    private func open(_ url: URL) {
+        guard url.scheme == "sideout", url.host == "match", !url.lastPathComponent.isEmpty,
+              url.lastPathComponent == ScoreAPI.demoMatchID || url.lastPathComponent.allSatisfy(\.isNumber) else { return }
+        if let match = store.matches.first(where: { $0.id == url.lastPathComponent }) { selectedMatch = match }
+        else if let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems,
+                let date = items.first(where: { $0.name == "date" })?.value,
+                let division = items.first(where: { $0.name == "division" })?.value, let api = store.api {
+            Task {
+                do { selectedMatch = try await api.match(id: url.lastPathComponent, date: date, division: division) }
+                catch { store.error = error.localizedDescription }
+            }
+        }
     }
     private var header: some View {
         HStack(alignment: .top) {
@@ -90,7 +94,7 @@ struct ScoreboardView: View {
     private var demo: some View {
         VStack(alignment: .leading, spacing: 14) {
             Image(systemName: "iphone.gen3.radiowaves.left.and.right").font(.system(size: 36)).foregroundStyle(Palette.lime)
-            Text("No match on right now?").font(.system(size: 24, weight: .semibold, design: .serif))
+            Text("Demo match").font(.system(size: 24, weight: .semibold, design: .serif))
             Text("Try a simulated match and put its live scoreboard on your Lock Screen.").foregroundStyle(.white.opacity(0.8))
             Button("Try a demo match", systemImage: "arrow.right") {
                 Task { if let match = await store.demoMatch() { selectedMatch = match } }
@@ -158,12 +162,6 @@ struct MatchCard: View {
             }.buttonStyle(.plain)
             Divider()
             HStack {
-                Button { store.toggleFavorite(match.away, division: match.division) } label: {
-                    Image(systemName: store.favorites.contains(match.away.slug) ? "star.fill" : "star")
-                }.accessibilityLabel("Favorite \(match.away.name)")
-                Button { store.toggleFavorite(match.home, division: match.division) } label: {
-                    Image(systemName: store.favorites.contains(match.home.slug) ? "star.fill" : "star")
-                }.accessibilityLabel("Favorite \(match.home.name)")
                 Spacer()
                 if let activity = store.activity(for: match) {
                     Button("Stop following", systemImage: "lock.iphone") { Task { await store.stop(activity) } }
@@ -176,8 +174,7 @@ struct MatchCard: View {
     }
     private func teamRow(_ team: VolleyballTeam) -> some View {
         HStack(spacing: 12) {
-            Text(String(team.abbreviation.prefix(3))).font(.system(size: 10, weight: .heavy, design: .rounded))
-                .frame(width: 38, height: 38).background(Palette.paper, in: RoundedRectangle(cornerRadius: 11))
+            TeamBadge(abbreviation: team.abbreviation)
             if let rank = team.rank, rank > 0 { Text("\(rank)").font(.caption).foregroundStyle(.secondary) }
             Text(team.name).font(.headline).multilineTextAlignment(.leading)
             Spacer(minLength: 4)

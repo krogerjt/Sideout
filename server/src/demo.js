@@ -61,6 +61,7 @@ export function demoMatch(now = Date.now()) {
 export function withDemo(provider, clock = () => Date.now()) {
   return {
     board: (...args) => provider.board(...args),
+    standings: (...args) => provider.standings(...args),
     match: async (date, division, id) => id === DEMO_ID ? demoMatch(clock()) : provider.match(date, division, id)
   };
 }
