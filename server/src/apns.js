@@ -43,8 +43,9 @@ export class APNs {
     this.issuedAt = now;
     return this.cachedJWT;
   }
-  send(subscription, state, end = false) {
-    return this.push(subscription.token, activityPayload(state, end), { priority: end ? '10' : '5', ttl: end ? 3600 : 120, collapseId: subscription.id });
+  // Priority 10 for score changes and endings; unchanged heartbeats use 5 to save the activity's update budget.
+  send(subscription, state, end = false, urgent = end) {
+    return this.push(subscription.token, activityPayload(state, end), { priority: urgent || end ? '10' : '5', ttl: end ? 3600 : 120, collapseId: subscription.id });
   }
   start(token, attributes, state, alert) {
     return this.push(token, startPayload(attributes, state, alert), { priority: '10', ttl: 600 });
@@ -76,7 +77,7 @@ export class APNs {
       request.on('end', () => {
         let reason = ''; try { reason = JSON.parse(response).reason || ''; } catch {}
         if (status === 200) finish(null, { ok: true });
-        else if (status === 410 || ['BadDeviceToken', 'Unregistered'].includes(reason)) finish(null, { expired: true });
+        else if (status === 410 || ['BadDeviceToken', 'Unregistered'].includes(reason)) finish(null, { expired: true, reason: reason || String(status) });
         else finish(new Error(`APNs ${status}: ${reason || 'request rejected'}`));
       });
       request.end(body);
