@@ -55,7 +55,7 @@ const t2 = (slug, conference) => ({ slug, name: slug.toUpperCase(), abbreviation
 const final = (id, home, away, homeWins, division = 'd1') => ({ id, division, status: 'final', home: { ...home, winner: homeWins, setsWon: homeWins ? 3 : 1 }, away: { ...away, winner: !homeWins, setsWon: homeWins ? 1 : 3 } });
 test('standings are counted from final scores by conference when NCAA.com has none', async t => {
   const store = new Store(':memory:'); t.after(() => store.close());
-  const neb = t2('nebraska', 'big-ten'), wis = t2('wisconsin', 'big-ten'), pitt = t2('pittsburgh', 'acc'), ind = t2('free-agents', '');
+  const neb = t2('nebraska', 'big-ten'), wis = t2('wisconsin', 'big-ten-'), pitt = t2('pittsburgh', 'acc'), ind = t2('free-agents', '');
   const boards = {
     '2026-09-01/d1': [final('1', neb, pitt, true), final('2', wis, ind, true)],
     '2026-10-01/d1': [final('3', neb, wis, true), { id: '4', status: 'scheduled', home: pitt, away: wis }],
@@ -71,6 +71,7 @@ test('standings are counted from final scores by conference when NCAA.com has no
   assert.deepEqual(table.conferences[1].teams.map(r => [r.school, r.conference, r.overall]), [['NEBRASKA', '1-0', '2-0'], ['WISCONSIN', '0-1', '1-1']]);
   assert.deepEqual(table.conferences[0].teams.map(r => [r.conference, r.overall]), [['0-0', '0-1']]);
   assert.equal(conferenceName('atlantic-10'), 'Atlantic 10'); assert.equal(conferenceName('big-ten'), 'Big Ten');
+  assert.equal(conferenceName('uac-'), 'UAC'); assert.equal(conferenceName('amcc'), 'AMCC');
 });
 test('boards indexed before results were kept are read again', () => {
   const store = new Store(':memory:');

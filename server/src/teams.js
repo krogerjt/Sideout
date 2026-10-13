@@ -78,7 +78,9 @@ export class TeamIndex {
       for (const team of teams) {
         const entry = counts.get(team.slug) ?? { team, divisions: {} };
         // Keep the newest name, and any conference a board reported.
-        entry.team = { ...team, conference: team.conference || entry.team.conference || '', conferenceName: team.conferenceName || entry.team.conferenceName || '' };
+        // Slugs sometimes carry a stray hyphen (West Georgia's is "uac-"), so trim them to group with the rest of the conference.
+        const conference = (team.conference || '').replace(/^-+|-+$/g, '');
+        entry.team = { ...team, conference: conference || entry.team.conference || '', conferenceName: team.conferenceName || entry.team.conferenceName || '' };
         entry.divisions[division] = (entry.divisions[division] ?? 0) + 1;
         counts.set(team.slug, entry);
       }
@@ -144,9 +146,9 @@ export class TeamIndex {
 
 const ACRONYMS = new Set(['acc', 'sec', 'asun', 'swac', 'meac', 'wac', 'caa', 'maac', 'nec', 'ovc', 'mvc', 'aac', 'cusa', 'usa', 'gliac', 'glvc', 'psac', 'cacc',
   'siac', 'ciaa', 'nsic', 'rmac', 'mec', 'gac', 'lsc', 'ccaa', 'gnac', 'pbc', 'sac', 'sunyac', 'nescac', 'oac', 'uaa', 'ccc', 'miac', 'wiac', 'iiac', 'nacc',
-  'ncac', 'odac', 'scac', 'cciw', 'nac', 'mac', 'aec', 'uac', 'sliac', 'usac', 'cunyac', 'nwc', 'ccs', 'hcac', 'mascac']);
+  'ncac', 'odac', 'scac', 'cciw', 'nac', 'mac', 'aec', 'uac', 'sliac', 'usac', 'cunyac', 'nwc', 'ccs', 'hcac', 'mascac', 'amcc']);
 // Boards sometimes give only the conference's URL slug, e.g. "big-ten" or "acc".
 export function conferenceName(seo) {
   if (!seo) return 'Independent';
-  return seo.split('-').map(word => ACRONYMS.has(word) ? word.toUpperCase() : word[0].toUpperCase() + word.slice(1)).join(' ');
+  return seo.split('-').filter(Boolean).map(word => ACRONYMS.has(word) ? word.toUpperCase() : word[0].toUpperCase() + word.slice(1)).join(' ');
 }
