@@ -42,15 +42,19 @@ struct StandingsView: View {
                         }
                     } header: { Text(group.name) }
                 }
-                if let updated = standings?.updated, !updated.isEmpty {
-                    Section { EmptyView() } footer: { Text("Updated \(updated) · NCAA.com via ncaa-api") }
+                if let standings, !standings.updated.isEmpty {
+                    Section { EmptyView() } footer: {
+                        Text(standings.source == "scores"
+                             ? "NCAA.com hasn't posted volleyball standings, so Sideout counted these records from \(standings.updated). Conference records count matches between teams in the same conference."
+                             : "Updated \(standings.updated) · NCAA.com via ncaa-api")
+                    }
                 }
             }
             .scrollContentBackground(.hidden).background(Palette.paper).foregroundStyle(Palette.ink)
             .overlay {
                 if loading && standings == nil { ProgressView("Loading standings…") }
                 else if let error, standings == nil { ContentUnavailableView("Couldn't load standings", systemImage: "wifi.exclamationmark", description: Text(error)) }
-                else if !loading && standings?.conferences.isEmpty == true { ContentUnavailableView("No standings yet", systemImage: "list.number", description: Text("NCAA.com hasn't posted standings for this division.")) }
+                else if !loading && standings?.conferences.isEmpty == true { ContentUnavailableView("No standings yet", systemImage: "list.number", description: Text("No final scores have been counted for this division yet. Check back once Sideout has read this season's schedule.")) }
             }
             .navigationTitle("Standings")
             .task(id: division) { conference = ""; await load() }

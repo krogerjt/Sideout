@@ -18,7 +18,7 @@ function daysBetween(a, b) { return Math.round((Date.parse(a) - Date.parse(b)) /
 export class TeamIndex {
   constructor({ provider, store, onError = console.error }) {
     this.provider = provider; this.store = store; this.onError = onError;
-    this.retryAt = new Map();
+    this.retryAt = new Map(); this.tables = new Map();
   }
 
   // The next board to read, or null when the index is current.
@@ -44,10 +44,16 @@ export class TeamIndex {
     try {
       // ncaa-api answers 404 for a day with no matches.
       const matches = await this.provider.board(next.date, next.division).catch(error => { if (/ 404$/.test(error.message)) return []; throw error; });
-      const teams = matches.flatMap(m => [m.home, m.away]).filter(t => t.slug).map(({ slug, name, abbreviation }) => ({ slug, name, abbreviation }));
-      this.store.setTeamDay(next.date, next.division, teams, now);
+      const teams = matches.flatMap(m => [m.home, m.away]).filter(t => t.slug)
+        .map(({ slug, name, abbreviation, conference = '', conferenceName = '' }) => ({ slug, name, abbreviation, conference, conferenceName }));
+      // Final results, kept so standings can be counted when NCAA.com doesn't publish them.
+      const games = matches.filter(m => m.status === 'final' && m.home.slug && m.away.slug).map(m => {
+        const homeWon = m.home.winner || m.away.winner ? m.home.winner === true : (m.home.setsWon ?? 0) > (m.away.setsWon ?? 0);
+        return { id: m.id, home: m.home.slug, away: m.away.slug, winner: homeWon ? m.home.slug : m.away.slug };
+      }).filter(g => g.home !== g.away);
+      this.store.setTeamDay(next.date, next.division, teams, now, games);
       this.fetched?.set(`${next.date}/${next.division}`, now);
-      this.list = null;
+      this.list = null; this.tables.clear();
       this.retryAt.delete(`${next.date}/${next.division}`);
     } catch (error) {
       this.onError(`Team index failed for ${next.date} ${next.division}: ${error.message}`);
@@ -71,7 +77,8 @@ export class TeamIndex {
     for (const { division, teams } of this.store.teamDayRows()) {
       for (const team of teams) {
         const entry = counts.get(team.slug) ?? { team, divisions: {} };
-        entry.team = team;
+        // Keep the newest name, and any conference a board reported.
+        entry.team = { ...team, conference: team.conference || entry.team.conference || '', conferenceName: team.conferenceName || entry.team.conferenceName || '' };
         entry.divisions[division] = (entry.divisions[division] ?? 0) + 1;
         counts.set(team.slug, entry);
       }
@@ -79,6 +86,49 @@ export class TeamIndex {
     return [...counts.values()].map(({ team, divisions }) => ({
       ...team, division: Object.entries(divisions).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))[0][0]
     })).sort((a, b) => a.name.localeCompare(b.name));
+  }
+  // Records counted from final scores, grouped by conference. A match between two teams of the same conference counts
+  // as a conference match, which is how NCAA.com counts it too except for the odd non-conference meeting of league rivals.
+  standings(division) {
+    if (!this.tables.has(division)) this.tables.set(division, this.count(division));
+    return this.tables.get(division);
+  }
+  count(division) {
+    const games = new Map();
+    let latest = '';
+    for (const row of this.store.teamDayRows()) {
+      for (const game of row.games) games.set(game.id, game);
+      if (row.games.length && row.date > latest) latest = row.date;
+    }
+    const teams = new Map(this.teams().map(team => [team.slug, team]));
+    const records = new Map();
+    const record = slug => records.get(slug) ?? records.set(slug, { w: 0, l: 0, cw: 0, cl: 0 }).get(slug);
+    for (const game of games.values()) {
+      const home = teams.get(game.home), away = teams.get(game.away);
+      const conference = home?.conference && home.conference === away?.conference;
+      for (const slug of [game.home, game.away]) {
+        const r = record(slug), won = game.winner === slug;
+        won ? r.w++ : r.l++;
+        if (conference) won ? r.cw++ : r.cl++;
+      }
+    }
+    const pct = (w, l) => w + l ? w / (w + l) : 0;
+    const conferences = new Map();
+    for (const team of teams.values()) {
+      if (team.division !== division) continue;
+      const r = records.get(team.slug) ?? { w: 0, l: 0, cw: 0, cl: 0 };
+      const name = team.conferenceName || conferenceName(team.conference);
+      if (!conferences.has(name)) conferences.set(name, []);
+      conferences.get(name).push({ team, r });
+    }
+    return {
+      division, source: 'scores', updated: latest ? `final scores through ${latest}` : '',
+      conferences: [...conferences.entries()].sort(([a], [b]) => (a === 'Independent') - (b === 'Independent') || a.localeCompare(b)).map(([name, rows]) => ({
+        name,
+        teams: rows.sort((a, b) => pct(b.r.cw, b.r.cl) - pct(a.r.cw, a.r.cl) || b.r.cw - a.r.cw || pct(b.r.w, b.r.l) - pct(a.r.w, a.r.l) || b.r.w - a.r.w || a.team.name.localeCompare(b.team.name))
+          .map(({ team, r }) => ({ school: team.name, conference: `${r.cw}-${r.cl}`, overall: `${r.w}-${r.l}`, stats: [] }))
+      }))
+    };
   }
   // Paces itself: quick while building, then an hourly check for the boards that need a daily refresh.
   run({ busyMs = 1500, idleMs = 3600000 } = {}) {
@@ -90,4 +140,13 @@ export class TeamIndex {
     timer = setTimeout(loop, busyMs);
     return () => { stopped = true; clearTimeout(timer); };
   }
+}
+
+const ACRONYMS = new Set(['acc', 'sec', 'asun', 'swac', 'meac', 'wac', 'caa', 'maac', 'nec', 'ovc', 'mvc', 'aac', 'cusa', 'usa', 'gliac', 'glvc', 'psac', 'cacc',
+  'siac', 'ciaa', 'nsic', 'rmac', 'mec', 'gac', 'lsc', 'ccaa', 'gnac', 'pbc', 'sac', 'sunyac', 'nescac', 'oac', 'uaa', 'ccc', 'miac', 'wiac', 'iiac', 'nacc',
+  'ncac', 'odac', 'scac', 'cciw', 'nac', 'mac', 'aec', 'uac', 'sliac', 'usac', 'cunyac', 'nwc', 'ccs', 'hcac', 'mascac']);
+// Boards sometimes give only the conference's URL slug, e.g. "big-ten" or "acc".
+export function conferenceName(seo) {
+  if (!seo) return 'Independent';
+  return seo.split('-').map(word => ACRONYMS.has(word) ? word.toUpperCase() : word[0].toUpperCase() + word.slice(1)).join(' ');
 }

@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { Store } from '../src/store.js';
-import { TeamIndex, seasonDates } from '../src/teams.js';
+import { TeamIndex, seasonDates, conferenceName } from '../src/teams.js';
 import { normalizeStandings } from '../src/provider.js';
 
 const team = (slug, name) => ({ slug, name, abbreviation: name.slice(0, 5) });
@@ -49,4 +49,35 @@ test('standings keep conference and overall records from merged NCAA headers', (
   assert.equal(row.school, 'Nebraska'); assert.equal(row.conference, '8-0'); assert.equal(row.overall, '18-1');
   assert.deepEqual(row.stats.at(-1), { label: 'Overall STREAK', value: 'Won 9' });
   assert.throws(() => normalizeStandings({}, 'd1'));
+});
+
+const t2 = (slug, conference) => ({ slug, name: slug.toUpperCase(), abbreviation: slug, conference, conferenceName: '' });
+const final = (id, home, away, homeWins, division = 'd1') => ({ id, division, status: 'final', home: { ...home, winner: homeWins, setsWon: homeWins ? 3 : 1 }, away: { ...away, winner: !homeWins, setsWon: homeWins ? 1 : 3 } });
+test('standings are counted from final scores by conference when NCAA.com has none', async t => {
+  const store = new Store(':memory:'); t.after(() => store.close());
+  const neb = t2('nebraska', 'big-ten'), wis = t2('wisconsin', 'big-ten'), pitt = t2('pittsburgh', 'acc'), ind = t2('free-agents', '');
+  const boards = {
+    '2026-09-01/d1': [final('1', neb, pitt, true), final('2', wis, ind, true)],
+    '2026-10-01/d1': [final('3', neb, wis, true), { id: '4', status: 'scheduled', home: pitt, away: wis }],
+    // The same cross-division match shows on both boards and counts once.
+    '2026-10-01/d2': [final('3', neb, wis, true)]
+  };
+  const index = new TeamIndex({ provider: { board: async (date, division) => boards[`${date}/${division}`] ?? [] }, store, onError: () => {} });
+  const now = at('2026-10-13');
+  while (await index.step(now));
+  const table = index.standings('d1');
+  assert.equal(table.source, 'scores'); assert.equal(table.updated, 'final scores through 2026-10-01');
+  assert.deepEqual(table.conferences.map(c => c.name), ['ACC', 'Big Ten', 'Independent']);
+  assert.deepEqual(table.conferences[1].teams.map(r => [r.school, r.conference, r.overall]), [['NEBRASKA', '1-0', '2-0'], ['WISCONSIN', '0-1', '1-1']]);
+  assert.deepEqual(table.conferences[0].teams.map(r => [r.conference, r.overall]), [['0-0', '0-1']]);
+  assert.equal(conferenceName('atlantic-10'), 'Atlantic 10'); assert.equal(conferenceName('big-ten'), 'Big Ten');
+});
+test('boards indexed before results were kept are read again', () => {
+  const store = new Store(':memory:');
+  store.db.exec("UPDATE team_days SET games=NULL");
+  store.db.prepare("INSERT INTO team_days (date,division,teams,fetchedAt,games) VALUES ('2026-09-01','d1','[]',1,NULL)").run();
+  assert.equal(store.teamDays().size, 0);
+  store.setTeamDay('2026-09-01', 'd1', [], 2);
+  assert.equal(store.teamDays().get('2026-09-01/d1'), 2);
+  store.close();
 });

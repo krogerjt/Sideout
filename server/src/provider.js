@@ -16,7 +16,9 @@ export function statusOf(value) {
 }
 function team(raw) {
   if (!raw?.names?.short) throw new Error('Unexpected NCAA team format');
-  return { name: raw.names.short, abbreviation: raw.names.char6 || raw.names.short, slug: raw.names.seo || '', setsWon: integer(raw.score), rank: integer(raw.rank), color: '#496653' };
+  const conference = raw.conferences?.[0];
+  return { name: raw.names.short, abbreviation: raw.names.char6 || raw.names.short, slug: raw.names.seo || '', setsWon: integer(raw.score), rank: integer(raw.rank), color: '#496653',
+    conference: conference?.conferenceSeo || '', conferenceName: conference?.conferenceName?.trim() || '', winner: raw.winner === true };
 }
 export function normalizeBoard(raw, date, division, now = Date.now()) {
   if (!Array.isArray(raw.games)) throw new Error('Unexpected NCAA scoreboard format');
