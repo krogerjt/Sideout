@@ -7,6 +7,7 @@ import { APNs } from './apns.js';
 import { Store } from './store.js';
 import { pollSubscriptions, startFavorites, DEVICE_ACTIVITY_LIMIT } from './worker.js';
 import { privacyPage } from './privacy.js';
+import { TeamIndex } from './teams.js';
 
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const hash = value => createHash('sha256').update(value).digest('hex');
@@ -45,7 +46,7 @@ function authenticate(req, store) {
   store.seen(device.id);
   return device.id;
 }
-export function createApp({ provider, store, apns, limiter = new RateLimiter(defaultLimits()), clientIPHeader = process.env.CLIENT_IP_HEADER,
+export function createApp({ provider, store, apns, teamIndex = new TeamIndex({ provider, store }), limiter = new RateLimiter(defaultLimits()), clientIPHeader = process.env.CLIENT_IP_HEADER,
   maxActivities = Number(process.env.MAX_ACTIVITIES) || 5000, privacyContact = process.env.PRIVACY_CONTACT }) {
   return createServer(async (req, res) => {
     const send = (status, value, cache = 'no-store') => { res.writeHead(status, { 'content-type': 'application/json', 'cache-control': cache }); res.end(JSON.stringify(value)); };
@@ -59,6 +60,18 @@ export function createApp({ provider, store, apns, limiter = new RateLimiter(def
       }
       if (!limiter.allow('requests', client)) return send(429, { error: 'Too many requests. Please wait a minute and retry.' });
       if (url.pathname === '/v1/config' && req.method === 'GET') return send(200, { pushEnabled: apns.ready, source: 'NCAA via ncaa-api', pollSeconds: Number(process.env.POLL_SECONDS || 20), demoMatchId: DEMO_ID });
+      if (url.pathname === '/v1/teams' && req.method === 'GET') {
+        const division = url.searchParams.get('division');
+        if (division && !['d1','d2','d3'].includes(division)) return send(400, { error: 'Use division d1, d2, or d3.' });
+        const teams = teamIndex.teams().filter(team => !division || team.division === division);
+        return send(200, { teams, complete: teamIndex.complete() }, 'public, max-age=600');
+      }
+      if (url.pathname === '/v1/standings' && req.method === 'GET') {
+        const division = url.searchParams.get('division') || 'd1';
+        if (!['d1','d2','d3'].includes(division)) return send(400, { error: 'Use division d1, d2, or d3.' });
+        try { return send(200, await provider.standings(division), 'public, max-age=900'); }
+        catch { return send(502, { error: 'Standings are temporarily unavailable. Please retry.' }); }
+      }
       if ((url.pathname === '/v1/matches' || /^\/v1\/matches\/(\d+|demo)$/.test(url.pathname)) && req.method === 'GET') {
         const date = url.searchParams.get('date') || easternDate();
         const division = url.searchParams.get('division') || 'd1';
@@ -128,7 +141,9 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   const store = new Store(process.env.DATA_PATH || './data/sideout.sqlite');
   const provider = withDemo(new NCAAProvider()); const apns = new APNs();
   const limiter = new RateLimiter(defaultLimits());
-  const app = createApp({ provider, store, apns, limiter });
+  const teamIndex = new TeamIndex({ provider, store });
+  const app = createApp({ provider, store, apns, limiter, teamIndex });
+  const stopIndex = teamIndex.run();
   let stopped = false, timer;
   async function tick() {
     await startFavorites({ store, provider, apns });
@@ -143,6 +158,6 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
     tick();
   });
   for (const signal of ['SIGTERM', 'SIGINT']) process.on(signal, () => {
-    stopped = true; clearTimeout(timer); apns.close?.(); app.close(() => process.exit(0));
+    stopped = true; clearTimeout(timer); stopIndex(); apns.close?.(); app.close(() => process.exit(0));
   });
 }

@@ -112,3 +112,17 @@ test('upstream failures return actionable error and no fake scores', async t => 
   const response = await f.request('/v1/matches');
   assert.equal(response.status, 502); assert.match((await response.json()).error, /temporarily unavailable/);
 });
+test('teams and standings are public', async t => {
+  const store = new Store(':memory:');
+  const standings = { division: 'd1', updated: '', conferences: [] };
+  const provider = { board: async () => [], match: async () => { throw new Error('none'); }, standings: async () => standings };
+  const teamIndex = { teams: () => [{ slug: 'a', name: 'A', abbreviation: 'A', division: 'd1' }, { slug: 'b', name: 'B', abbreviation: 'B', division: 'd2' }], complete: () => true };
+  const app = createApp({ store, provider: withDemo(provider), apns: { ready: true }, teamIndex });
+  await new Promise(resolve => app.listen(0, '127.0.0.1', resolve));
+  t.after(async () => { await new Promise(resolve => app.close(resolve)); store.close(); });
+  const get = path => fetch(`http://127.0.0.1:${app.address().port}${path}`);
+  assert.deepEqual((await (await get('/v1/teams?division=d2')).json()).teams.map(t => t.slug), ['b']);
+  assert.equal((await (await get('/v1/teams')).json()).teams.length, 2);
+  assert.equal((await get('/v1/teams?division=d9')).status, 400);
+  assert.deepEqual(await (await get('/v1/standings?division=d1')).json(), standings);
+});

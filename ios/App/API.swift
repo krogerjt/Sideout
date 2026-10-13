@@ -9,6 +9,33 @@ struct APIError: LocalizedError {
 
 struct ServerConfig: Decodable { let pushEnabled: Bool }
 struct MatchEnvelope: Decodable { let matches: [Match] }
+/// A team seen on this season's scoreboards, as the server lists them for picking favorites.
+struct TeamEntry: Codable, Hashable, Identifiable {
+    let slug: String
+    let name: String
+    let abbreviation: String
+    let division: String
+    var id: String { slug }
+}
+struct TeamList: Decodable { let teams: [TeamEntry]; let complete: Bool }
+struct Standings: Decodable {
+    struct Stat: Decodable, Hashable { let label: String; let value: String }
+    struct Row: Decodable, Hashable, Identifiable {
+        let school: String
+        let conference: String?
+        let overall: String?
+        let stats: [Stat]
+        var id: String { school }
+    }
+    struct Conference: Decodable, Hashable, Identifiable {
+        let name: String
+        let teams: [Row]
+        var id: String { name }
+    }
+    let division: String
+    let updated: String
+    let conferences: [Conference]
+}
 private struct ErrorEnvelope: Decodable { let error: String }
 private struct DeviceRegistration: Decodable { let deviceId: String; let secret: String }
 
@@ -51,6 +78,12 @@ struct ScoreAPI {
     }
     func matches(date: String, division: String) async throws -> [Match] {
         try JSONDecoder().decode(MatchEnvelope.self, from: await request("v1/matches", query: [.init(name: "date", value: date), .init(name: "division", value: division)])).matches
+    }
+    func teams(division: String) async throws -> TeamList {
+        try JSONDecoder().decode(TeamList.self, from: await request("v1/teams", query: [.init(name: "division", value: division)]))
+    }
+    func standings(division: String) async throws -> Standings {
+        try JSONDecoder().decode(Standings.self, from: await request("v1/standings", query: [.init(name: "division", value: division)]))
     }
     func match(_ match: Match) async throws -> Match {
         try await self.match(id: match.id, date: match.date, division: match.division)
