@@ -8,6 +8,11 @@ export function activityPayload(state, end = false, now = Math.floor(Date.now() 
   else aps['stale-date'] = state.checkedAt + 120;
   return { aps };
 }
+// Push-to-start (iOS 17.2+): the system creates the Live Activity from these attributes, then wakes the app to register its update token.
+export function startPayload(attributes, state, alert, now = Math.floor(Date.now() / 1000)) {
+  return { aps: { timestamp: now, event: 'start', 'content-state': state, 'stale-date': state.checkedAt + 120,
+    'attributes-type': 'VolleyballActivityAttributes', attributes, alert } };
+}
 export class APNs {
   constructor(env = process.env) {
     this.env = env;
@@ -38,9 +43,15 @@ export class APNs {
     this.issuedAt = now;
     return this.cachedJWT;
   }
-  async send(subscription, state, end = false) {
+  send(subscription, state, end = false) {
+    return this.push(subscription.token, activityPayload(state, end), { priority: end ? '10' : '5', ttl: end ? 3600 : 120, collapseId: subscription.id });
+  }
+  start(token, attributes, state, alert) {
+    return this.push(token, startPayload(attributes, state, alert), { priority: '10', ttl: 600 });
+  }
+  async push(token, payload, { priority, ttl, collapseId }) {
     if (!this.ready) throw new Error('APNs is not configured');
-    const body = JSON.stringify(activityPayload(state, end));
+    const body = JSON.stringify(payload);
     return new Promise((resolve, reject) => {
       const client = this.connection();
       let settled = false;
@@ -53,11 +64,11 @@ export class APNs {
       const onClientError = error => finish(error);
       const timer = setTimeout(() => { finish(new Error('APNs timed out')); client.destroy(); }, 12000);
       client.on('error', onClientError);
-      const request = client.request({ ':method': 'POST', ':path': `/3/device/${subscription.token}`,
+      const request = client.request({ ':method': 'POST', ':path': `/3/device/${token}`,
         authorization: `bearer ${this.jwt()}`, 'apns-topic': `${this.env.APNS_BUNDLE_ID}.push-type.liveactivity`,
-        'apns-push-type': 'liveactivity', 'apns-priority': end ? '10' : '5',
-        'apns-expiration': String(Math.floor(Date.now() / 1000) + (end ? 3600 : 120)),
-        'apns-collapse-id': subscription.id, 'content-type': 'application/json' });
+        'apns-push-type': 'liveactivity', 'apns-priority': priority,
+        'apns-expiration': String(Math.floor(Date.now() / 1000) + ttl),
+        ...(collapseId ? { 'apns-collapse-id': collapseId } : {}), 'content-type': 'application/json' });
       let status, response = '';
       request.on('response', headers => { status = headers[':status']; });
       request.setEncoding('utf8'); request.on('data', data => { response += data; });

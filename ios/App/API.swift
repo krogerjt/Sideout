@@ -73,6 +73,20 @@ struct ScoreAPI {
         }
     }
 
+    /// Hands the server this install's push-to-start token and favorite teams, so it can start their matches automatically.
+    func registerAutoStart(token: Data, teams: [FavoriteTeam]) async throws {
+        let body = try JSONSerialization.data(withJSONObject: [
+            "token": token.map { String(format: "%02x", $0) }.joined(),
+            "teams": teams.map { ["slug": $0.slug, "division": $0.division] }
+        ])
+        _ = try await authorized { try await request("v1/autostart", method: "PUT", body: body, credential: $0) }
+    }
+    func unregisterAutoStart() async throws {
+        // An install that never registered has nothing to remove, so don't create a credential just for this.
+        guard !Keychain.read(Keychain.deviceAccount).isEmpty else { return }
+        _ = try await authorized { try await request("v1/autostart", method: "DELETE", credential: $0) }
+    }
+
     /// Runs a request with this install's credential, creating one on first use and once more if the server no longer knows it.
     private func authorized(_ send: (String) async throws -> Data) async throws -> Data {
         do { return try await send(try await credential()) }

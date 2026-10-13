@@ -10,7 +10,11 @@ final class ScoreStore: ObservableObject {
     @Published var error: String?
     @Published var loading = false
     @Published var pushEnabled = false
-    @Published var favorites = Set(UserDefaults.standard.stringArray(forKey: "favorites") ?? [])
+    @Published private(set) var favoriteTeams: [FavoriteTeam] = []
+    @Published var autoStart = UserDefaults.standard.object(forKey: "autoStartFavorites") as? Bool ?? true {
+        didSet { UserDefaults.standard.set(autoStart, forKey: "autoStartFavorites"); syncAutoStart() }
+    }
+    @Published private(set) var autoStartStatus: String?
     @Published var activities: [Activity<VolleyballActivityAttributes>] = []
     @Published var activityMessages: [String: String] = [:]
     @Published var startingMatch: String?
@@ -19,6 +23,16 @@ final class ScoreStore: ObservableObject {
     private var registrationTasks: [String: Task<Void, Never>] = [:]
     private var pendingDeletes: Set<String> = Set(UserDefaults.standard.stringArray(forKey: "pendingDeletes") ?? [])
     private var generation = 0
+    private let favoriteStore = FavoritesStore()
+    private var pushToStartToken: Data?
+    private var autoStartSynced = false
+    private var autoStartTask: Task<Void, Never>?
+    private var pushToStartTask: Task<Void, Never>?
+    private var activityUpdatesTask: Task<Void, Never>?
+
+    var favorites: Set<String> { Set(favoriteTeams.map(\.slug)) }
+    /// Push-to-start, which lets the server begin a Live Activity while Sideout is closed, arrived in iOS 17.2.
+    var autoStartSupported: Bool { if #available(iOS 17.2, *) { true } else { false } }
 
     var api: ScoreAPI? { ScoreAPI.bundled }
     var dateKey: String {
@@ -36,6 +50,29 @@ final class ScoreStore: ObservableObject {
         UserDefaults.standard.removeObject(forKey: "serverAddress")
         activities = Activity<VolleyballActivityAttributes>.activities.filter { $0.activityState == .active || $0.activityState == .stale }
         for activity in activities { observe(activity) }
+        favoriteStore.importLegacy()
+        favoriteTeams = favoriteStore.all()
+        // Activities the server starts for favorite teams appear here, often while iOS has launched Sideout in the background.
+        activityUpdatesTask = Task { [weak self] in
+            for await activity in Activity<VolleyballActivityAttributes>.activityUpdates {
+                guard let self else { return }
+                guard !self.activities.contains(where: { $0.id == activity.id }),
+                      activity.activityState == .active || activity.activityState == .stale else { continue }
+                self.activities.append(activity)
+                self.observe(activity)
+            }
+        }
+        if #available(iOS 17.2, *) {
+            pushToStartTask = Task { [weak self] in
+                if let token = Activity<VolleyballActivityAttributes>.pushToStartToken { self?.pushToStartToken = token }
+                self?.syncAutoStart()
+                for await token in Activity<VolleyballActivityAttributes>.pushToStartTokenUpdates {
+                    guard let self else { return }
+                    self.pushToStartToken = token
+                    self.syncAutoStart()
+                }
+            }
+        } else { syncAutoStart() }
     }
     func refresh() async {
         guard let api else { error = "Sideout's server address is not configured in this build."; return }
@@ -51,6 +88,9 @@ final class ScoreStore: ObservableObject {
             guard !Task.isCancelled, requestGeneration == generation, requestKey == queryKey else { return }
             pushEnabled = config.pushEnabled
             matches = results; error = nil
+            let seen = results.flatMap { [($0.home, $0.division), ($0.away, $0.division)] }.filter { favorites.contains($0.0.slug) }
+            if favoriteStore.resolve(seen) { favoriteTeams = favoriteStore.all(); autoStartSynced = false }
+            if !autoStartSynced { syncAutoStart() }
         } catch {
             guard !Task.isCancelled, requestGeneration == generation, requestKey == queryKey else { return }
             self.error = error.localizedDescription
@@ -63,10 +103,46 @@ final class ScoreStore: ObservableObject {
         do { return try await api.match(id: ScoreAPI.demoMatchID, date: dateKey, division: "d1") }
         catch { self.error = error.localizedDescription; return nil }
     }
-    func toggleFavorite(_ team: VolleyballTeam) {
+    func toggleFavorite(_ team: VolleyballTeam, division: String) {
         guard !team.slug.isEmpty else { return }
-        if favorites.contains(team.slug) { favorites.remove(team.slug) } else { favorites.insert(team.slug) }
-        UserDefaults.standard.set(Array(favorites), forKey: "favorites")
+        if favorites.contains(team.slug) { favoriteStore.remove(team.slug) }
+        else { favoriteStore.save(FavoriteTeam(slug: team.slug, name: team.name, division: division)) }
+        favoriteTeams = favoriteStore.all()
+        syncAutoStart()
+    }
+    func removeFavorite(_ team: FavoriteTeam) {
+        favoriteStore.remove(team.slug)
+        favoriteTeams = favoriteStore.all()
+        syncAutoStart()
+    }
+
+    /// Tells the server which favorite teams to start automatically, or that it should stop.
+    func syncAutoStart() {
+        autoStartTask?.cancel()
+        autoStartSynced = false
+        guard let api else { return }
+        let teams = autoStart && autoStartSupported ? favoriteTeams : []
+        let token = pushToStartToken
+        autoStartTask = Task { [weak self] in
+            do {
+                if teams.isEmpty { try await api.unregisterAutoStart() }
+                else if let token { try await api.registerAutoStart(token: token, teams: teams) }
+                guard let self, !Task.isCancelled else { return }
+                self.autoStartSynced = teams.isEmpty || token != nil
+                self.autoStartStatus = self.describeAutoStart(teams: teams.count, registered: token != nil)
+            } catch {
+                guard let self, !Task.isCancelled else { return }
+                self.autoStartStatus = "Couldn't reach Sideout to set up automatic starts. It will retry when the app is open. \(error.localizedDescription)"
+            }
+        }
+    }
+    private func describeAutoStart(teams: Int, registered: Bool) -> String? {
+        guard autoStart else { return nil }
+        guard autoStartSupported else { return "Automatic starts need iOS 17.2 or later." }
+        guard teams > 0 else { return "Star a team to start its matches automatically." }
+        guard ActivityAuthorizationInfo().areActivitiesEnabled else { return "Turn on Live Activities for Sideout in iPhone Settings." }
+        guard registered else { return "Waiting for iOS to allow automatic starts…" }
+        return "On for \(teams) \(teams == 1 ? "team" : "teams"). Scoreboards appear 30 minutes before first serve."
     }
     func isFavorite(_ match: Match) -> Bool { favorites.contains(match.home.slug) || favorites.contains(match.away.slug) }
     func activity(for match: Match) -> Activity<VolleyballActivityAttributes>? { activities.first { $0.attributes.matchID == match.id } }
@@ -112,6 +188,8 @@ final class ScoreStore: ObservableObject {
         let id = activity.attributes.subscriptionID
         registrationTasks[id]?.cancel()
         registrationTasks[id] = Task { [weak self] in
+            let background = UIApplication.shared.beginBackgroundTask(withName: "Connect Live Activity")
+            defer { if background != .invalid { UIApplication.shared.endBackgroundTask(background) } }
             var delay: UInt64 = 2
             while !Task.isCancelled {
                 guard let self, let api = self.api else { return }

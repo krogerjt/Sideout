@@ -2,9 +2,20 @@ import SwiftUI
 
 @main
 struct SideoutApp: App {
-    @StateObject private var store = ScoreStore()
+    @UIApplicationDelegateAdaptor private var delegate: AppDelegate
     var body: some Scene {
-        WindowGroup { ScoreboardView().environmentObject(store).tint(Palette.green) }
+        WindowGroup { ScoreboardView().environmentObject(delegate.store).tint(Palette.green) }
+    }
+}
+
+/// Creates the store at launch, including when iOS launches Sideout in the background for a server-started Live Activity
+/// and no window is shown, so that activity's update token still reaches the server.
+@MainActor
+final class AppDelegate: NSObject, UIApplicationDelegate {
+    lazy var store = ScoreStore()
+    func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil) -> Bool {
+        _ = store
+        return true
     }
 }
 

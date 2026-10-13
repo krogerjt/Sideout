@@ -31,7 +31,7 @@ struct ScoreboardView: View {
                     if store.loading && store.matches.isEmpty { ProgressView("Checking the court…").frame(maxWidth: .infinity).padding(40) }
                     else if visible.isEmpty {
                         ContentUnavailableView(search.isEmpty ? "No matches here" : "No matching teams", systemImage: "volleyball",
-                            description: Text(filter == "Favorites" ? "Tap a star on a match to save a team." : "Try another date or filter. Schedules use Eastern Time."))
+                            description: Text(filter == "Favorites" ? "Tap a star on a match to save a team. Its matches will appear on your Lock Screen automatically." : "Try another date or filter. Schedules use Eastern Time."))
                     } else {
                         LazyVStack(spacing: 12) {
                             ForEach(visible) { match in
@@ -158,10 +158,10 @@ struct MatchCard: View {
             }.buttonStyle(.plain)
             Divider()
             HStack {
-                Button { store.toggleFavorite(match.away) } label: {
+                Button { store.toggleFavorite(match.away, division: match.division) } label: {
                     Image(systemName: store.favorites.contains(match.away.slug) ? "star.fill" : "star")
                 }.accessibilityLabel("Favorite \(match.away.name)")
-                Button { store.toggleFavorite(match.home) } label: {
+                Button { store.toggleFavorite(match.home, division: match.division) } label: {
                     Image(systemName: store.favorites.contains(match.home.slug) ? "star.fill" : "star")
                 }.accessibilityLabel("Favorite \(match.home.name)")
                 Spacer()

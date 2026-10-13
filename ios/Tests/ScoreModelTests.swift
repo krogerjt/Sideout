@@ -28,4 +28,20 @@ final class ScoreModelTests: XCTestCase {
         XCTAssertEqual(parts.queryItems?.first(where: { $0.name == "date" })?.value, "2026-09-05")
         XCTAssertEqual(parts.queryItems?.first(where: { $0.name == "division" })?.value, "d1")
     }
+    @MainActor func testFavoritesPersistInCoreDataAndImportLegacySlugs() throws {
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: "SideoutTests-\(UUID().uuidString)"))
+        defaults.set(["boise-st"], forKey: "favorites")
+        let store = FavoritesStore(inMemory: true)
+        store.importLegacy(defaults)
+        XCTAssertNil(defaults.stringArray(forKey: "favorites"))
+        XCTAssertEqual(store.all(), [FavoriteTeam(slug: "boise-st", name: "boise-st", division: "d1")])
+        let boise = VolleyballTeam(name: "Boise St.", abbreviation: "BOISE", slug: "boise-st", setsWon: nil, rank: nil, color: "#000000")
+        XCTAssertTrue(store.resolve([(boise, "d1")]))
+        XCTAssertFalse(store.resolve([(boise, "d2")]), "a resolved team keeps its name and division")
+        store.save(FavoriteTeam(slug: "idaho-st", name: "Idaho St.", division: "d1"))
+        store.save(FavoriteTeam(slug: "idaho-st", name: "Idaho St.", division: "d1"))
+        XCTAssertEqual(store.all().map(\.name), ["Boise St.", "Idaho St."])
+        store.remove("boise-st")
+        XCTAssertEqual(store.all().map(\.slug), ["idaho-st"])
+    }
 }

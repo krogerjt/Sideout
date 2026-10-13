@@ -10,7 +10,9 @@ export class Store {
       id TEXT PRIMARY KEY, matchId TEXT NOT NULL, date TEXT NOT NULL, division TEXT NOT NULL,
       token TEXT NOT NULL, expiresAt INTEGER NOT NULL, lastState TEXT, lastSent INTEGER DEFAULT 0
     ); CREATE TABLE IF NOT EXISTS tombstones (id TEXT PRIMARY KEY, expiresAt INTEGER NOT NULL);
-    CREATE TABLE IF NOT EXISTS devices (id TEXT PRIMARY KEY, secretHash TEXT NOT NULL, lastSeen INTEGER NOT NULL)`);
+    CREATE TABLE IF NOT EXISTS devices (id TEXT PRIMARY KEY, secretHash TEXT NOT NULL, lastSeen INTEGER NOT NULL);
+    CREATE TABLE IF NOT EXISTS autostarts (deviceId TEXT PRIMARY KEY, token TEXT NOT NULL, teams TEXT NOT NULL, updatedAt INTEGER NOT NULL);
+    CREATE TABLE IF NOT EXISTS launches (deviceId TEXT NOT NULL, matchId TEXT NOT NULL, at INTEGER NOT NULL, PRIMARY KEY (deviceId, matchId))`);
     // Databases created before per-device ownership gain the column; their rows have no owner and expire within eight hours.
     if (!this.db.prepare('PRAGMA table_info(subscriptions)').all().some(c => c.name === 'deviceId')) this.db.exec('ALTER TABLE subscriptions ADD COLUMN deviceId TEXT');
   }
@@ -37,6 +39,27 @@ export class Store {
   addDevice(id, secretHash, now = Date.now()) { this.db.prepare('INSERT INTO devices (id,secretHash,lastSeen) VALUES (?,?,?)').run(id, secretHash, now); }
   device(id) { return this.db.prepare('SELECT * FROM devices WHERE id=?').get(id); }
   seen(id, now = Date.now()) { this.db.prepare('UPDATE devices SET lastSeen=? WHERE id=?').run(now, id); }
-  pruneDevices(olderThan) { this.db.prepare('DELETE FROM devices WHERE lastSeen < ?').run(olderThan); }
+  pruneDevices(olderThan) {
+    this.db.prepare('DELETE FROM devices WHERE lastSeen < ?').run(olderThan);
+    this.db.prepare('DELETE FROM autostarts WHERE deviceId NOT IN (SELECT id FROM devices)').run();
+  }
+  // Push-to-start registrations: one token per install plus the favorite teams it wants started automatically.
+  setAutostart(deviceId, token, teams, now = Date.now()) {
+    this.db.prepare(`INSERT INTO autostarts (deviceId,token,teams,updatedAt) VALUES (?,?,?,?)
+      ON CONFLICT(deviceId) DO UPDATE SET token=excluded.token, teams=excluded.teams, updatedAt=excluded.updatedAt`).run(deviceId, token, JSON.stringify(teams), now);
+  }
+  autostart(deviceId) {
+    const row = this.db.prepare('SELECT * FROM autostarts WHERE deviceId=?').get(deviceId);
+    return row && { ...row, teams: JSON.parse(row.teams) };
+  }
+  autostarts() { return this.db.prepare('SELECT * FROM autostarts').all().map(row => ({ ...row, teams: JSON.parse(row.teams) })); }
+  removeAutostart(deviceId, token) {
+    if (token) this.db.prepare('DELETE FROM autostarts WHERE deviceId=? AND token=?').run(deviceId, token);
+    else this.db.prepare('DELETE FROM autostarts WHERE deviceId=?').run(deviceId);
+  }
+  // A match is started at most once per install, so dismissing an auto-started activity keeps it gone.
+  launched(deviceId, matchId) { return Boolean(this.db.prepare('SELECT 1 FROM launches WHERE deviceId=? AND matchId=?').get(deviceId, matchId)); }
+  launch(deviceId, matchId, now = Date.now()) { this.db.prepare('INSERT OR REPLACE INTO launches (deviceId,matchId,at) VALUES (?,?,?)').run(deviceId, matchId, now); }
+  pruneLaunches(olderThan) { this.db.prepare('DELETE FROM launches WHERE at < ?').run(olderThan); }
   close() { this.db.close(); }
 }
