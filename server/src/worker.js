@@ -18,10 +18,12 @@ export async function pollSubscriptions({ store, provider, apns, now = Date.now(
       const fingerprint = JSON.stringify({ ...state, checkedAt: 0 });
       const end = ['final', 'cancelled', 'postponed'].includes(match.status);
       // Heartbeat advances stale-date only after a successful provider fetch.
-      if (!end && sub.lastState === fingerprint && now - sub.lastSent < 60000) continue;
+      const changed = sub.lastState !== fingerprint;
+      if (!end && !changed && now - sub.lastSent < 60000) continue;
       if (store.get(sub.id)?.token !== sub.token) continue;
-      const result = await apns.send(sub, state, end);
+      const result = await apns.send(sub, state, end, { changed });
       if (store.get(sub.id)?.token !== sub.token) continue;
+      if (result.expired) onError(`Stopped updating activity ${sub.id}: APNs rejected its token (${result.reason || 'expired'})`);
       if (result.expired || end) store.remove(sub.id);
       else store.sent(sub.id, fingerprint, now, sub.token);
     } catch (error) { onError(`Score update failed: ${error.message}`); }

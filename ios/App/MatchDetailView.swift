@@ -53,7 +53,11 @@ struct MatchDetailView: View {
                     guard scenePhase == .active else { return }
                     while !Task.isCancelled {
                         if let api = store.api {
-                            do { updated = try await api.match(initial); error = nil }
+                            do {
+                                let fresh = try await api.match(initial)
+                                updated = fresh; error = nil
+                                await store.refreshActivity(with: fresh)
+                            }
                             catch { if !Task.isCancelled { self.error = error.localizedDescription } }
                         }
                         do { try await Task.sleep(for: .seconds(20)) } catch { return }

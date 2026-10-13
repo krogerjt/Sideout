@@ -220,6 +220,14 @@ final class ScoreStore: ObservableObject {
             }
         }
     }
+    /// Shows a freshly fetched score on the followed Live Activity right away while the app is open, so it never lags
+    /// the match center; the server's pushes keep it current once the app is closed. Board rows lack set points, so only
+    /// detailed matches are applied.
+    func refreshActivity(with match: Match) async {
+        guard match.detailsAvailable, let activity = activity(for: match),
+              match.checkedAt > activity.content.state.checkedAt else { return }
+        await activity.update(ActivityContent(state: match.contentState, staleDate: Date(timeIntervalSince1970: match.checkedAt + 120)))
+    }
     func stop(_ activity: Activity<VolleyballActivityAttributes>) async {
         await activity.end(nil, dismissalPolicy: .immediate)
         await remove(activity)

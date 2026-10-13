@@ -76,3 +76,29 @@ test('APNs JWT is verifiable ES256 with raw 64-byte signature', () => {
   assert.equal(verify('sha256', Buffer.from(`${header}.${claims}`), { key: publicKey, dsaEncoding: 'ieee-p1363' }, Buffer.from(signature, 'base64url')), true);
   assert.equal(apns.jwt(), token);
 });
+test('score changes are sent at priority 10 and unchanged heartbeats at 5', async t => {
+  const f = setup(t);
+  await pollSubscriptions(f); assert.deepEqual(f.pushes[0][3], { changed: true });
+  await pollSubscriptions({ ...f, now: 161000 }); assert.deepEqual(f.pushes[1][3], { changed: false });
+  const apns = new APNs({ APNS_ENVIRONMENT: 'production' }); apns.ready = true;
+  const sent = []; apns.request = async (env, token, payload, options) => { sent.push(options.priority); return { ok: true }; };
+  await apns.send(f.sub, {}, false, { changed: true }); await apns.send(f.sub, {}, false, { changed: false }); await apns.send(f.sub, {}, true);
+  assert.deepEqual(sent, ['10', '5', '10']);
+});
+test('a token from the other APNs environment is retried there and remembered', async t => {
+  const apns = new APNs({ APNS_ENVIRONMENT: 'development' }); apns.ready = true;
+  const hosts = [];
+  apns.request = async env => { hosts.push(env); return env === 'production' ? { ok: true } : { expired: true, reason: 'BadDeviceToken' }; };
+  const warn = console.warn; console.warn = () => {}; t.after(() => { console.warn = warn; });
+  assert.deepEqual(await apns.push('ab', {}, {}), { ok: true });
+  assert.deepEqual(await apns.push('ab', {}, {}), { ok: true });
+  assert.deepEqual(hosts, ['development', 'production', 'production']);
+});
+test('a token rejected by both APNs environments is reported expired', async t => {
+  const apns = new APNs({ APNS_ENVIRONMENT: 'production' }); apns.ready = true;
+  apns.request = async () => ({ expired: true, reason: 'BadDeviceToken' });
+  assert.equal((await apns.push('ab', {}, {})).expired, true);
+  apns.request = async () => ({ expired: true, reason: 'Unregistered' });
+  let calls = 0; const request = apns.request; apns.request = async (...a) => { calls++; return request(...a); };
+  assert.equal((await apns.push('cd', {}, {})).expired, true); assert.equal(calls, 1);
+});
