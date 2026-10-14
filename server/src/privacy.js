@@ -9,6 +9,8 @@ export function privacyPage(contact) {
 <p>Sideout shows college volleyball scores and lets you follow a match on your Lock Screen. It has no accounts, ads, analytics or tracking.</p>
 <h2>What stays on your iPhone</h2>
 <p>Your favorite teams and app settings are stored on your device. If you turn on automatic Lock Screen scoreboards, the app also shares your favorite teams with the Sideout server, as described below.</p>
+<h2>On Android</h2>
+<p>The Android app keeps your favorite teams, followed matches and settings on your phone only. It asks the server for scores and sends nothing else, so none of the records below are created for Android phones.</p>
 <h2>What the Sideout server stores</h2>
 <ul>
 <li><strong>A random install ID and secret.</strong> The app creates these the first time it needs lock-screen updates, so only your iPhone can start or stop its own followed matches. They are not linked to your name, Apple ID, or any other identifier. An install ID unused for 180 days is deleted.</li>
