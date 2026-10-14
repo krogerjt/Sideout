@@ -1,6 +1,6 @@
 # Sideout
 
-A native iPhone app for NCAA women's volleyball, with set scores, favorites, match details, Lock Screen Live Activities, and Dynamic Island support. Browse Divisions I, II, and III; schedules use Eastern Time.
+A native iPhone and Android app for NCAA women's volleyball, with set scores, favorites, match details, Lock Screen Live Activities, and Dynamic Island support. Browse Divisions I, II, and III; schedules use Eastern Time.
 
 ## What's built
 
@@ -68,6 +68,28 @@ The machine is configured never to stop, because the push worker runs inside the
 The app has no setup screen: it talks to the server compiled into it. Settings shows Live Activity status, a link to iPhone settings and the privacy policy.
 
 XcodeGen writes the app and widget plists and entitlements into `ios/Config`. Customize `project.yml` so regeneration preserves your configuration. The app icon source is `ios/App/Assets.xcassets/AppIcon.appiconset/AppIcon.png` (1024×1024, no transparency); replace it to change the icon.
+
+## Android app
+
+`android/` is a Kotlin and Jetpack Compose version of the app with the same Scores, Standings and Teams tabs, favorites, match center and developer settings. In place of Live Activities, a followed match lives in an ongoing notification that stays on the lock screen. On Android 16 it asks to be shown as a Live Update, which also puts the current score in a status bar chip.
+
+The phone keeps those notifications current itself: a foreground service asks the server for each followed match every 20 seconds and stops when the matches end. Favorite teams' matches start the same way 30 minutes before first serve, from an exact alarm that a background check sets. The Android app uses only the public score endpoints, so the server needs no changes and no Firebase project is involved. Favorites and settings never leave the phone.
+
+### Build and install
+
+GitHub Actions builds `sideout.apk` on every push (the **android** job in `.github/workflows/check.yml`), so no Android tools are needed on a PC.
+
+1. Add the server's `https://` address as the repository variable or secret `SIDEOUT_SERVER_URL` (**Settings → Secrets and variables → Actions**). Without it, the app asks for an address in Settings.
+2. Create a signing key once, so each new APK installs over the last one instead of needing an uninstall:
+   ```sh
+   keytool -genkeypair -keystore sideout.jks -alias sideout -keyalg RSA -keysize 2048 -validity 10000
+   base64 -w0 sideout.jks   # PowerShell: [Convert]::ToBase64String([IO.File]::ReadAllBytes("sideout.jks"))
+   ```
+   Save the base64 text as the secret `ANDROID_KEYSTORE_BASE64` and the password as `ANDROID_KEYSTORE_PASSWORD`. Keep `sideout.jks` somewhere safe; it is git-ignored.
+3. With the key in place, each push to `main` replaces `sideout.apk` on the **android-latest** pre-release. Open that page on the phone, download the APK, and allow your browser to install apps when Android asks. This repository is public, so anyone can download that APK, and it contains the server address.
+4. In Sideout's Settings, tap **Allow background updates** so Android doesn't pause score checks while the screen is off.
+
+To build locally instead, install Android Studio (or the command-line SDK with JDK 17), then run `SIDEOUT_SERVER_URL=https://your-server.example ./gradlew assembleRelease` in `android/`.
 
 ## Release to TestFlight from Windows
 
