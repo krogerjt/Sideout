@@ -44,7 +44,7 @@ export function autostartDue(match, now = Date.now(), lead = AUTOSTART_LEAD_MS) 
   const start = match.startTime * 1000;
   return now >= start - lead && now < start + 3 * 60 * 60 * 1000;
 }
-export async function startFavorites({ store, provider, apns, now = Date.now(), lead = AUTOSTART_LEAD_MS, onError = console.error }) {
+export async function startFavorites({ store, provider, apns, now = Date.now(), lead = AUTOSTART_LEAD_MS, onError = console.error, onLog = console.log }) {
   if (!apns.ready) return;
   const registrations = store.autostarts();
   if (!registrations.length) return;
@@ -68,8 +68,16 @@ export async function startFavorites({ store, provider, apns, now = Date.now(), 
               homeName: match.home.name, awayName: match.away.name, homeAbbreviation: match.home.abbreviation, awayAbbreviation: match.away.abbreviation };
             const alert = { title: `${match.away.name} at ${match.home.name}`,
               body: match.status === 'live' ? 'Underway now. Following on your Lock Screen.' : 'Starts soon. Following on your Lock Screen.' };
-            const result = await apns.start(registration.token, attributes, contentState(match), alert);
-            if (result.expired) { store.removeAutostart(registration.deviceId, registration.token); break scan; }
+            const who = registration.deviceId.slice(0, 8);
+            let result;
+            try { result = await apns.start(registration.token, attributes, contentState(match), alert); }
+            catch (error) { onError(`Auto-start of match ${match.id} for device ${who} failed, will retry: ${error.message}`); continue; }
+            if (result.expired) {
+              // The app sends a fresh push-to-start token the next time it opens.
+              onLog(`APNs rejected the push-to-start token for device ${who} (${result.reason || 'expired'}). Its favorites stay paused until Sideout is opened on that iPhone.`);
+              store.removeAutostart(registration.deviceId, registration.token); break scan;
+            }
+            onLog(`Auto-started match ${match.id} (${match.away.name} at ${match.home.name}, ${match.status}) for device ${who}; APNs accepted the push-to-start.`);
             store.launch(registration.deviceId, match.id, now);
             // The row owns the activity for this install; its update token arrives when the app registers it.
             store.put({ id, matchId: match.id, date: match.date, division: match.division, token: '', deviceId: registration.deviceId, expiresAt: now + 8 * 60 * 60 * 1000 });
