@@ -129,6 +129,11 @@ final class ScoreStore: ObservableObject {
         syncAutoStart()
     }
 
+    /// Picks up a push-to-start token iOS issued while Sideout was suspended, then re-registers favorites with the server.
+    func resumeAutoStart() {
+        if #available(iOS 17.2, *), let token = Activity<VolleyballActivityAttributes>.pushToStartToken { pushToStartToken = token }
+        syncAutoStart()
+    }
     /// Tells the server which favorite teams to start automatically, or that it should stop.
     func syncAutoStart() {
         autoStartTask?.cancel()

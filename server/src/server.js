@@ -93,13 +93,21 @@ export function createApp({ provider, store, apns, teamIndex = new TeamIndex({ p
       if (url.pathname === '/v1/autostart' && ['PUT', 'DELETE'].includes(req.method)) {
         const deviceId = authenticate(req, store);
         if (!deviceId) return send(401, { error: 'This iPhone needs to reconnect to Sideout.' });
-        if (req.method === 'DELETE') { store.removeAutostart(deviceId); return send(200, { ok: true }); }
+        if (req.method === 'DELETE') {
+          if (store.autostart(deviceId)) console.log(`Device ${deviceId.slice(0, 8)} turned off automatic starts.`);
+          store.removeAutostart(deviceId); return send(200, { ok: true });
+        }
         let data; try { data = await body(req); } catch { return send(400, { error: 'Invalid JSON request.' }); }
         const teams = data?.teams;
         if (!/^[a-f0-9]{32,512}$/i.test(data?.token || '') || !Array.isArray(teams) || teams.length > MAX_FAVORITES ||
           !teams.every(t => /^[a-z0-9-]{1,100}$/.test(t?.slug || '') && ['d1','d2','d3'].includes(t?.division))) return send(400, { error: 'Invalid favorite teams registration.' });
+        const previous = store.autostart(deviceId);
         if (!teams.length) store.removeAutostart(deviceId);
         else store.setAutostart(deviceId, data.token.toLowerCase(), teams.map(({ slug, division }) => ({ slug, division })));
+        const summary = teams.map(t => `${t.slug} (${t.division})`).join(', ');
+        if (!teams.length) { if (previous) console.log(`Device ${deviceId.slice(0, 8)} turned off automatic starts.`); }
+        else if (!previous || previous.token !== data.token.toLowerCase() || JSON.stringify(previous.teams) !== JSON.stringify(teams.map(({ slug, division }) => ({ slug, division }))))
+          console.log(`Device ${deviceId.slice(0, 8)} registered ${previous ? 'updated' : 'new'} favorites for automatic starts: ${summary}.`);
         return send(200, { ok: true });
       }
       const id = url.pathname.split('/').pop();

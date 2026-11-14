@@ -16,7 +16,7 @@ function setup(t) {
   const provider = { board: async (date, division) => date === '2026-09-05' && division === 'd1' ? [match] : [] };
   const starts = [], updates = [];
   const apns = { ready: true, start: async (...args) => { starts.push(args); return { ok: true }; }, send: async (...args) => { updates.push(args); return { ok: true }; } };
-  return { store, match, provider, apns, starts, updates, onError: () => {} };
+  return { store, match, provider, apns, starts, updates, onError: () => {}, onLog: () => {} };
 }
 test('favorite match is started 30 minutes before first serve, once', async t => {
   const f = setup(t);
@@ -57,6 +57,23 @@ test('failed push-to-start is retried on the next poll', async t => {
   await startFavorites({ ...f, now: START, apns: { ready: true, start: async () => { throw new Error('503'); } } });
   assert.equal(f.store.launched('dev-1', f.match.id), false);
   await startFavorites({ ...f, now: START }); assert.equal(f.starts.length, 1);
+});
+test('a failed push-to-start does not block the next favorite match', async t => {
+  const f = setup(t);
+  const second = { ...f.match, id: '999999', home: { ...f.match.home, slug: 'boise-st' } };
+  const provider = { board: async (date, division) => date === '2026-09-05' && division === 'd1' ? [f.match, second] : [] };
+  const errors = [], logs = [];
+  let calls = 0;
+  const apns = { ready: true, start: async () => { if (++calls === 1) throw new Error('APNs 500: InternalServerError'); return { ok: true }; } };
+  await startFavorites({ ...f, provider, apns, now: START, onError: e => errors.push(e), onLog: l => logs.push(l) });
+  assert.equal(f.store.launched('dev-1', f.match.id), false);
+  assert.equal(f.store.launched('dev-1', '999999'), true);
+  assert.match(errors[0], /will retry/); assert.match(logs[0], /Auto-started match 999999/);
+});
+test('rejected push-to-start token is logged', async t => {
+  const f = setup(t); const logs = [];
+  await startFavorites({ ...f, now: START, onLog: l => logs.push(l), apns: { ready: true, start: async () => ({ expired: true, reason: 'BadDeviceToken' }) } });
+  assert.match(logs[0], /BadDeviceToken/);
 });
 test('schedule window and late-night boards', () => {
   const match = { status: 'scheduled', startTime: START / 1000 };

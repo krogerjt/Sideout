@@ -30,6 +30,7 @@ enum Palette {
 struct RootView: View {
     @EnvironmentObject private var store: ScoreStore
     @State private var tab = Screen.scores
+    @Environment(\.scenePhase) private var scenePhase
     enum Screen { case scores, standings, teams }
     var body: some View {
         TabView(selection: $tab) {
@@ -37,6 +38,9 @@ struct RootView: View {
             StandingsView().tabItem { Label("Standings", systemImage: "list.number") }.tag(Screen.standings)
             TeamsView().tabItem { Label("Teams", systemImage: "star") }.tag(Screen.teams)
         }
+        // Resend favorites each time Sideout opens: the server drops them if Apple rejects the start token, and a suspended
+        // app may not relaunch for days, which left automatic starts silently off.
+        .onChange(of: scenePhase) { _, phase in if phase == .active { store.resumeAutoStart() } }
         .onOpenURL { url in
             tab = .scores
             store.openedURL = url
